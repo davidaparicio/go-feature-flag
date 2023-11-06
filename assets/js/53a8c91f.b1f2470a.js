@@ -1,0 +1,1 @@
+"use strict";(self.webpackChunkdocs_v_2=self.webpackChunkdocs_v_2||[]).push([[17322],{37040:e=>{e.exports=JSON.parse('{"label":"Open Feature","permalink":"/blog/tags/open-feature","allTagsPath":"/blog/tags","count":2,"unlisted":false}')}}]);

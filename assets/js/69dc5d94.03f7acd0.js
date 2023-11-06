@@ -1,0 +1,1 @@
+"use strict";(self.webpackChunkdocs_v_2=self.webpackChunkdocs_v_2||[]).push([[9246],{39920:s=>{s.exports=JSON.parse('{"label":"linter","permalink":"/blog/tags/linter","allTagsPath":"/blog/tags","count":1,"unlisted":false}')}}]);

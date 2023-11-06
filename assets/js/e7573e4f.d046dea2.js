@@ -1,0 +1,1 @@
+"use strict";(self.webpackChunkdocs_v_2=self.webpackChunkdocs_v_2||[]).push([[35336],{12284:s=>{s.exports=JSON.parse('{"label":"relay-proxy","permalink":"/blog/tags/relay-proxy","allTagsPath":"/blog/tags","count":2,"unlisted":false}')}}]);
