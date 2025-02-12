@@ -2,12 +2,15 @@ package controller
 
 import (
 	"fmt"
-	"github.com/thomaspoignant/go-feature-flag/cmd/relayproxy/metric"
 	"net/http"
 
 	"github.com/labstack/echo/v4"
 	ffclient "github.com/thomaspoignant/go-feature-flag"
+	"github.com/thomaspoignant/go-feature-flag/cmd/relayproxy/config"
+	"github.com/thomaspoignant/go-feature-flag/cmd/relayproxy/metric"
 	"github.com/thomaspoignant/go-feature-flag/cmd/relayproxy/model"
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/attribute"
 )
 
 type flagEval struct {
@@ -24,6 +27,7 @@ func NewFlagEval(goFF *ffclient.GoFeatureFlag, metrics metric.Metrics) Controlle
 
 // Handler is the entry point for the flag eval endpoint
 // @Summary     Evaluate a feature flag
+// @Tags GO Feature Flag Evaluation API
 // @Description Making a **POST** request to the URL `/v1/feature/<your_flag_name>/eval` will give you the value of the
 // @Description flag for this user.
 // @Description
@@ -64,7 +68,24 @@ func (h *flagEval) Handler(c echo.Context) error {
 		return err
 	}
 
-	// get flag name from the URL
+	tracer := otel.GetTracerProvider().Tracer(config.OtelTracerName)
+	_, span := tracer.Start(c.Request().Context(), "flagEvaluation")
+	defer span.End()
+
 	flagValue, _ := h.goFF.RawVariation(flagKey, evaluationCtx, reqBody.DefaultValue)
+
+	span.SetAttributes(
+		attribute.String("flagEvaluation.flagName", flagKey),
+		attribute.Bool("flagEvaluation.trackEvents", flagValue.TrackEvents),
+		attribute.String("flagEvaluation.variant", flagValue.VariationType),
+		attribute.Bool("flagEvaluation.failed", flagValue.Failed),
+		attribute.String("flagEvaluation.version", flagValue.Version),
+		attribute.String("flagEvaluation.reason", flagValue.Reason),
+		attribute.String("flagEvaluation.errorCode", flagValue.ErrorCode),
+		attribute.Bool("flagEvaluation.cacheable", flagValue.Cacheable),
+		// we convert to string because there is no attribute for interface{}
+		attribute.String("flagEvaluation.value", fmt.Sprintf("%v", flagValue.Value)),
+	)
+
 	return c.JSON(http.StatusOK, flagValue)
 }

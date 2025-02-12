@@ -2,10 +2,9 @@ package controller_test
 
 import (
 	"context"
-	"github.com/thomaspoignant/go-feature-flag/cmd/relayproxy/metric"
 	"io"
 	"io/ioutil"
-	"log"
+	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -17,6 +16,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	ffclient "github.com/thomaspoignant/go-feature-flag"
 	"github.com/thomaspoignant/go-feature-flag/cmd/relayproxy/controller"
+	"github.com/thomaspoignant/go-feature-flag/cmd/relayproxy/metric"
 	"github.com/thomaspoignant/go-feature-flag/exporter/logsexporter"
 	"github.com/thomaspoignant/go-feature-flag/retriever/fileretriever"
 )
@@ -149,7 +149,7 @@ func Test_flag_eval_Handler(t *testing.T) {
 			// init go-feature-flag
 			goFF, _ := ffclient.New(ffclient.Config{
 				PollingInterval: 10 * time.Second,
-				Logger:          log.New(os.Stdout, "", 0),
+				LeveledLogger:   slog.Default(),
 				Context:         context.Background(),
 				Retriever: &fileretriever.Retriever{
 					Path: configFlagsLocation,
@@ -195,7 +195,7 @@ func Test_flag_eval_Handler(t *testing.T) {
 				return
 			}
 
-			wantBody, err := ioutil.ReadFile(tt.want.bodyFile)
+			wantBody, err := os.ReadFile(tt.want.bodyFile)
 			assert.NoError(t, err, "Impossible the expected wantBody file %s", tt.want.bodyFile)
 			assert.Equal(t, tt.want.httpCode, rec.Code, "Invalid HTTP Code")
 			assert.JSONEq(t, string(wantBody), rec.Body.String(), "Invalid response wantBody")

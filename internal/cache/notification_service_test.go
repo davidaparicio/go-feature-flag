@@ -1,12 +1,13 @@
 package cache
 
 import (
+	"sync"
+	"testing"
+
 	"github.com/stretchr/testify/assert"
 	"github.com/thomaspoignant/go-feature-flag/internal/flag"
 	"github.com/thomaspoignant/go-feature-flag/notifier"
 	"github.com/thomaspoignant/go-feature-flag/testutils/testconvert"
-	"sync"
-	"testing"
 )
 
 func Test_notificationService_getDifferences(t *testing.T) {
@@ -34,7 +35,7 @@ func Test_notificationService_getDifferences(t *testing.T) {
 							"True":    testconvert.Interface(true),
 						},
 						DefaultRule: &flag.Rule{
-							Name: testconvert.String("legacyRuleV0"),
+							Name: testconvert.String("rule1"),
 							Percentages: &map[string]float64{
 								"False": 0,
 								"True":  100,
@@ -48,7 +49,7 @@ func Test_notificationService_getDifferences(t *testing.T) {
 							"True":    testconvert.Interface(true),
 						},
 						DefaultRule: &flag.Rule{
-							Name: testconvert.String("legacyRuleV0"),
+							Name: testconvert.String("rule1"),
 							Percentages: &map[string]float64{
 								"False": 0,
 								"True":  100,
@@ -64,7 +65,7 @@ func Test_notificationService_getDifferences(t *testing.T) {
 							"True":    testconvert.Interface(true),
 						},
 						DefaultRule: &flag.Rule{
-							Name: testconvert.String("legacyRuleV0"),
+							Name: testconvert.String("rule1"),
 							Percentages: &map[string]float64{
 								"False": 0,
 								"True":  100,
@@ -82,7 +83,7 @@ func Test_notificationService_getDifferences(t *testing.T) {
 							"True":    testconvert.Interface(true),
 						},
 						DefaultRule: &flag.Rule{
-							Name: testconvert.String("legacyRuleV0"),
+							Name: testconvert.String("rule1"),
 							Percentages: &map[string]float64{
 								"False": 0,
 								"True":  100,
@@ -105,7 +106,7 @@ func Test_notificationService_getDifferences(t *testing.T) {
 							"True":    testconvert.Interface(true),
 						},
 						DefaultRule: &flag.Rule{
-							Name: testconvert.String("legacyRuleV0"),
+							Name: testconvert.String("rule1"),
 							Percentages: &map[string]float64{
 								"False": 0,
 								"True":  100,
@@ -121,7 +122,7 @@ func Test_notificationService_getDifferences(t *testing.T) {
 							"True":    testconvert.Interface(true),
 						},
 						DefaultRule: &flag.Rule{
-							Name: testconvert.String("legacyRuleV0"),
+							Name: testconvert.String("rule1"),
 							Percentages: &map[string]float64{
 								"False": 0,
 								"True":  100,
@@ -135,7 +136,7 @@ func Test_notificationService_getDifferences(t *testing.T) {
 							"True":    testconvert.Interface(true),
 						},
 						DefaultRule: &flag.Rule{
-							Name: testconvert.String("legacyRuleV0"),
+							Name: testconvert.String("rule1"),
 							Percentages: &map[string]float64{
 								"False": 0,
 								"True":  100,
@@ -153,7 +154,7 @@ func Test_notificationService_getDifferences(t *testing.T) {
 							"True":    testconvert.Interface(true),
 						},
 						DefaultRule: &flag.Rule{
-							Name: testconvert.String("legacyRuleV0"),
+							Name: testconvert.String("rule1"),
 							Percentages: &map[string]float64{
 								"False": 0,
 								"True":  100,
@@ -176,7 +177,7 @@ func Test_notificationService_getDifferences(t *testing.T) {
 							"True":    testconvert.Interface(true),
 						},
 						DefaultRule: &flag.Rule{
-							Name: testconvert.String("legacyRuleV0"),
+							Name: testconvert.String("rule1"),
 							Percentages: &map[string]float64{
 								"False": 0,
 								"True":  100,
@@ -192,7 +193,7 @@ func Test_notificationService_getDifferences(t *testing.T) {
 							"True":    testconvert.Interface(true),
 						},
 						DefaultRule: &flag.Rule{
-							Name: testconvert.String("legacyRuleV0"),
+							Name: testconvert.String("rule1"),
 							Percentages: &map[string]float64{
 								"False": 0,
 								"True":  100,
@@ -213,7 +214,7 @@ func Test_notificationService_getDifferences(t *testing.T) {
 								"True":    testconvert.Interface(true),
 							},
 							DefaultRule: &flag.Rule{
-								Name: testconvert.String("legacyRuleV0"),
+								Name: testconvert.String("rule1"),
 								Percentages: &map[string]float64{
 									"False": 0,
 									"True":  100,
@@ -227,7 +228,7 @@ func Test_notificationService_getDifferences(t *testing.T) {
 								"True":    testconvert.Interface(true),
 							},
 							DefaultRule: &flag.Rule{
-								Name: testconvert.String("legacyRuleV0"),
+								Name: testconvert.String("rule1"),
 								Percentages: &map[string]float64{
 									"False": 0,
 									"True":  100,

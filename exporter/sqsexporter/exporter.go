@@ -4,13 +4,14 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"sync"
+
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/service/sqs"
 	"github.com/aws/aws-sdk-go-v2/service/sqs/types"
 	"github.com/thomaspoignant/go-feature-flag/exporter"
-	"log"
-	"sync"
+	"github.com/thomaspoignant/go-feature-flag/utils/fflog"
 )
 
 type Exporter struct {
@@ -27,7 +28,7 @@ type Exporter struct {
 }
 
 // Export is sending SQS event for each featureEvents received.
-func (f *Exporter) Export(ctx context.Context, _ *log.Logger, featureEvents []exporter.FeatureEvent) error {
+func (f *Exporter) Export(ctx context.Context, _ *fflog.FFLogger, featureEvents []exporter.FeatureEvent) error {
 	if f.AwsConfig == nil {
 		cfg, err := config.LoadDefaultConfig(ctx)
 		if err != nil {
@@ -55,7 +56,7 @@ func (f *Exporter) Export(ctx context.Context, _ *log.Logger, featureEvents []ex
 			MessageBody: aws.String(string(messageBody)),
 			QueueUrl:    aws.String(f.QueueURL),
 			MessageAttributes: map[string]types.MessageAttributeValue{
-				"emitter": types.MessageAttributeValue{
+				"emitter": {
 					DataType:    aws.String("String"),
 					StringValue: aws.String("GO Feature Flag"),
 				},

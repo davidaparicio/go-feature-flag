@@ -1,9 +1,10 @@
 package metric
 
 import (
+	"testing"
+
 	"github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/stretchr/testify/assert"
-	"testing"
 )
 
 func TestMetrics_IncAllFlag(t *testing.T) {
@@ -83,4 +84,15 @@ func TestMetrics_IncFlagChange(t *testing.T) {
 	metricSrv.IncFlagChange()
 
 	assert.Equal(t, 3.0, testutil.ToFloat64(metricSrv.flagChange))
+}
+
+func TestMetrics_IncForceRefresh(t *testing.T) {
+	metricSrv, err := NewMetrics()
+	assert.NoError(t, err)
+
+	metricSrv.IncForceRefresh()
+	metricSrv.IncForceRefresh()
+	metricSrv.IncForceRefresh()
+
+	assert.Equal(t, 3.0, testutil.ToFloat64(metricSrv.forceRefreshCounter))
 }

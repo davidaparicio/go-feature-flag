@@ -7,7 +7,7 @@ import (
 	"strings"
 
 	"github.com/BurntSushi/toml"
-	"github.com/thomaspoignant/go-feature-flag/internal/dto"
+	"github.com/thomaspoignant/go-feature-flag/model/dto"
 	"k8s.io/apimachinery/pkg/util/yaml"
 )
 

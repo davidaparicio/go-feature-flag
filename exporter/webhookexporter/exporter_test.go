@@ -2,24 +2,23 @@ package webhookexporter
 
 import (
 	"context"
-	"log"
+	"log/slog"
 	"os"
 	"testing"
 
-	"github.com/thomaspoignant/go-feature-flag/exporter"
-
 	"github.com/stretchr/testify/assert"
-
+	"github.com/thomaspoignant/go-feature-flag/exporter"
 	"github.com/thomaspoignant/go-feature-flag/testutils"
+	"github.com/thomaspoignant/go-feature-flag/utils/fflog"
 )
 
 func TestWebhook_IsBulk(t *testing.T) {
 	exporter := Exporter{}
-	assert.True(t, exporter.IsBulk(), "Exporter exporter is not a bulk exporter")
+	assert.True(t, exporter.IsBulk(), "DeprecatedExporter is a bulk exporter")
 }
 
 func TestWebhook_Export(t *testing.T) {
-	logger := log.New(os.Stdout, "", 0)
+	logger := &fflog.FFLogger{LeveledLogger: slog.Default()}
 	type fields struct {
 		EndpointURL string
 		Secret      string
@@ -28,7 +27,7 @@ func TestWebhook_Export(t *testing.T) {
 		Headers     map[string][]string
 	}
 	type args struct {
-		logger        *log.Logger
+		logger        *fflog.FFLogger
 		featureEvents []exporter.FeatureEvent
 	}
 	type expected struct {
@@ -218,6 +217,6 @@ func TestWebhook_Export_impossibleToParse(t *testing.T) {
 		EndpointURL: " http://invalid.com/",
 	}
 
-	err := f.Export(context.Background(), log.New(os.Stdout, "", 0), []exporter.FeatureEvent{})
+	err := f.Export(context.Background(), &fflog.FFLogger{LeveledLogger: slog.Default()}, []exporter.FeatureEvent{})
 	assert.EqualError(t, err, "parse \" http://invalid.com/\": first path segment in URL cannot contain colon")
 }

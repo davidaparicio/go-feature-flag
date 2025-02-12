@@ -3,15 +3,17 @@ package githubretriever_test
 import (
 	"context"
 	"net/http"
+	"strconv"
 	"testing"
-
-	"github.com/thomaspoignant/go-feature-flag/retriever/githubretriever"
-	"github.com/thomaspoignant/go-feature-flag/testutils/mock"
+	"time"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/thomaspoignant/go-feature-flag/retriever/githubretriever"
+	"github.com/thomaspoignant/go-feature-flag/testutils/mock"
 )
 
 func Test_github_Retrieve(t *testing.T) {
+	endRatelimit := time.Now().Add(1 * time.Hour)
 	type fields struct {
 		httpClient     mock.HTTP
 		context        context.Context
@@ -24,6 +26,7 @@ func Test_github_Retrieve(t *testing.T) {
 		fields  fields
 		want    []byte
 		wantErr bool
+		errMsg  string
 	}{
 		{
 			name: "Success",
@@ -117,6 +120,16 @@ func Test_github_Retrieve(t *testing.T) {
 			wantErr: true,
 		},
 		{
+			name: "Ratelimiting",
+			fields: fields{
+				httpClient:     mock.HTTP{RateLimit: true, EndRatelimit: endRatelimit},
+				repositorySlug: "thomaspoignant/go-feature-flag",
+				filePath:       "testdata/flag-config.yaml",
+			},
+			errMsg:  "request to https://api.github.com/repos/thomaspoignant/go-feature-flag/contents/testdata/flag-config.yaml?ref=main failed with code 429. GitHub Headers: map[X-Content-Type-Options:nosniff X-Frame-Options:deny X-Github-Media-Type:github.v3; format=json X-Github-Request-Id:F82D:37B98C:232EF263:235C93BD:6650BDC6 X-Ratelimit-Limit:60 X-Ratelimit-Remaining:0 X-Ratelimit-Reset:" + strconv.FormatInt(endRatelimit.Unix(), 10) + " X-Ratelimit-Resource:core X-Ratelimit-Used:60 X-Xss-Protection:1; mode=block]",
+			wantErr: true,
+		},
+		{
 			name: "Use GitHub token",
 			fields: fields{
 				httpClient:     mock.HTTP{},
@@ -149,6 +162,9 @@ func Test_github_Retrieve(t *testing.T) {
 
 			h.SetHTTPClient(&tt.fields.httpClient)
 			got, err := h.Retrieve(tt.fields.context)
+			if tt.errMsg != "" {
+				assert.EqualError(t, err, tt.errMsg)
+			}
 			assert.Equal(t, tt.wantErr, err != nil, "Retrieve() error = %v, wantErr %v", err, tt.wantErr)
 			if !tt.wantErr {
 				assert.Equal(t, http.MethodGet, tt.fields.httpClient.Req.Method)
@@ -159,4 +175,29 @@ func Test_github_Retrieve(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestRateLimiting(t *testing.T) {
+	h := githubretriever.Retriever{
+		RepositorySlug: "thomaspoignant/go-feature-flag",
+		FilePath:       "testdata/flag-config.yaml",
+	}
+
+	httpClient := &mock.HTTP{}
+	h.SetHTTPClient(httpClient)
+	_, err := h.Retrieve(context.TODO())
+	assert.NoError(t, err)
+	assert.True(t, httpClient.HasBeenCalled)
+
+	httpClient = &mock.HTTP{RateLimit: true}
+	h.SetHTTPClient(httpClient)
+	_, err = h.Retrieve(context.TODO())
+	assert.Error(t, err)
+	assert.True(t, httpClient.HasBeenCalled)
+
+	httpClient = &mock.HTTP{}
+	h.SetHTTPClient(httpClient)
+	_, err = h.Retrieve(context.TODO())
+	assert.Error(t, err)
+	assert.False(t, httpClient.HasBeenCalled)
 }

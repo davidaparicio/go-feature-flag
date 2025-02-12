@@ -2,20 +2,19 @@ package cache
 
 import (
 	"fmt"
-	"github.com/thomaspoignant/go-feature-flag/utils/fflog"
-	"log"
-
-	"github.com/thomaspoignant/go-feature-flag/internal/dto"
+	"log/slog"
 
 	"github.com/thomaspoignant/go-feature-flag/internal/flag"
+	"github.com/thomaspoignant/go-feature-flag/model/dto"
+	"github.com/thomaspoignant/go-feature-flag/utils/fflog"
 )
 
 type InMemoryCache struct {
 	Flags  map[string]flag.InternalFlag
-	Logger *log.Logger
+	Logger *fflog.FFLogger
 }
 
-func NewInMemoryCache(logger *log.Logger) *InMemoryCache {
+func NewInMemoryCache(logger *fflog.FFLogger) *InMemoryCache {
 	return &InMemoryCache{
 		Flags:  map[string]flag.InternalFlag{},
 		Logger: logger,
@@ -26,7 +25,8 @@ func (fc *InMemoryCache) addFlag(key string, value flag.InternalFlag) {
 	if err := value.IsValid(); err == nil {
 		fc.Flags[key] = value
 	} else {
-		fflog.Printf(fc.Logger, "error: [cache] invalid configuration for flag %s: %s", key, err)
+		fc.Logger.Error("[cache] invalid configuration for flag",
+			slog.String("key", key), slog.Any("error", err))
 	}
 }
 
@@ -64,13 +64,14 @@ func (fc *InMemoryCache) All() map[string]flag.Flag {
 }
 
 func (fc *InMemoryCache) Init(flags map[string]dto.DTO) {
-	cache := make(map[string]flag.InternalFlag, 0)
+	cache := make(map[string]flag.InternalFlag)
 	for key, flagDto := range flags {
 		flagToAdd := flagDto.Convert()
 		if err := flagToAdd.IsValid(); err == nil {
-			cache[key] = flagDto.Convert()
+			cache[key] = flagToAdd
 		} else {
-			fflog.Printf(fc.Logger, "error: [cache] invalid configuration for flag %s: %s", key, err)
+			fc.Logger.Error("[cache] invalid configuration for flag",
+				slog.String("key", key), slog.Any("error", err))
 		}
 	}
 	fc.Flags = cache

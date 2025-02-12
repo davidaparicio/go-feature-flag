@@ -1,10 +1,10 @@
 relayproxy:
-  # -- (tpl/object) Define this for extra Django environment variables
-  # @notationType -- tpl
+  # -- GO Feature Flag relay proxy configuration as string (accept template).
   config: | # This is a configuration example for the relay-proxy
     listen: 1031
     pollingInterval: 1000
     startWithRetrieverError: false
+    logLevel: info
     retriever:
       kind: http
       url: https://raw.githubusercontent.com/thomaspoignant/go-feature-flag/main/examples/retriever_file/flags.goff.yaml
@@ -28,7 +28,7 @@ replicaCount: 1
 
 image:
   # -- The image repository to pull from
-  repository: thomaspoignant/go-feature-flag
+  repository: gofeatureflag/go-feature-flag
   # -- The image is pulled only if it is not already present locally
   pullPolicy: IfNotPresent
   # -- Overrides the image tag whose default is the chart appVersion
@@ -120,3 +120,29 @@ tolerations: []
 
 # -- Affinity settings for pod assignment to nodes
 affinity: {}
+
+# -- Array of extra objects to deploy with the release (evaluated as a template)
+extraManifests: []
+#  - kind: Role
+#    apiVersion: rbac.authorization.k8s.io/v1
+#    metadata:
+#      name: feature-flags-relay-proxy
+#      namespace: "{{ .Release.Namespace }}"
+#    rules:
+#      - apiGroups: [""]
+#        resources:
+#          - configmaps
+#        verbs:
+#          - get
+#  - kind: RoleBinding
+#    apiVersion: rbac.authorization.k8s.io/v1
+#    metadata:
+#      name: feature-flags-relay-proxy
+#      namespace: "{{ .Release.Namespace }}"
+#    subjects:
+#    - kind: ServiceAccount
+#      name: feature-flags-relay-proxy
+#    roleRef:
+#      kind: Role
+#      name: feature-flags-relay-proxy
+#      apiGroup: ""

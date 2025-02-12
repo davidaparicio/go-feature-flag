@@ -18,7 +18,7 @@ jobs:
 
       - name: Get changed files in the docs folder
         id: changed-files-specific
-        uses: tj-actions/changed-files@v40
+        uses: tj-actions/changed-files@v45
         with:
           files: ./cmd/relayproxy/helm-charts/**
 
@@ -36,7 +36,7 @@ jobs:
           commit_username: thomaspoignant
           commit_email: thomaspoignant@goferatureflag.org
 
-      - uses: actions/setup-go@v4
+      - uses: actions/setup-go@v5
         with:
           go-version-file: go.mod
           check-latest: true
@@ -59,11 +59,11 @@ jobs:
         run: cp -rf $CHART_README_LOCATION $MAIN_BRANCH_NAME/$CHART_README_LOCATION
 
       - name: Create Pull Request
-        uses: peter-evans/create-pull-request@v5
+        uses: peter-evans/create-pull-request@v7
         if: steps.changed-files-specific.outputs.any_changed == 'true'
         with:
           branch: update-relay-proxy-chart-readme
-          title: Update relay proxy helm README
+          title: "docs(helm): Update relay proxy helm README"
           body: Automated pull request to update relay-proxy helm chart README
           commit-message: Update relay proxy helm README
           labels: automerge

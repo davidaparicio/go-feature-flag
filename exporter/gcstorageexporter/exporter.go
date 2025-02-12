@@ -3,16 +3,14 @@ package gcstorageexporter
 import (
 	"context"
 	"fmt"
-	"github.com/thomaspoignant/go-feature-flag/utils/fflog"
 	"io"
-	"log"
+	"log/slog"
 	"os"
 
+	"cloud.google.com/go/storage"
 	"github.com/thomaspoignant/go-feature-flag/exporter"
 	"github.com/thomaspoignant/go-feature-flag/exporter/fileexporter"
-
-	"cloud.google.com/go/storage"
-
+	"github.com/thomaspoignant/go-feature-flag/utils/fflog"
 	"google.golang.org/api/option"
 )
 
@@ -56,7 +54,7 @@ func (f *Exporter) IsBulk() bool {
 }
 
 // Export is saving a collection of events in a file.
-func (f *Exporter) Export(ctx context.Context, logger *log.Logger, featureEvents []exporter.FeatureEvent) error {
+func (f *Exporter) Export(ctx context.Context, logger *fflog.FFLogger, featureEvents []exporter.FeatureEvent) error {
 	// Init google storage client
 	client, err := storage.NewClient(ctx, f.Options...)
 	if err != nil {
@@ -95,12 +93,13 @@ func (f *Exporter) Export(ctx context.Context, logger *log.Logger, featureEvents
 	}
 
 	for _, file := range files {
-		// read file
 		of, err := os.Open(outputDir + "/" + file.Name())
 		if err != nil {
-			fflog.Printf(logger, "error: [Exporter] impossible to open the file %s/%s", outputDir, file.Name())
+			logger.Error("[GCP Exporter] impossible to open the file",
+				slog.String("path", outputDir+"/"+file.Name()))
 			continue
 		}
+		defer func() { _ = of.Close() }()
 
 		// prepend the path
 		source := file.Name()
@@ -112,10 +111,9 @@ func (f *Exporter) Export(ctx context.Context, logger *log.Logger, featureEvents
 		_, err = io.Copy(wc, of)
 		_ = wc.Close()
 		if err != nil {
-			return fmt.Errorf("error: [Exporter] impossible to copy the file from %s to bucket %s: %v",
+			return fmt.Errorf("error: [GCP Exporter] impossible to copy the file from %s to bucket %s: %v",
 				source, f.Bucket, err)
 		}
-		fflog.Printf(logger, "info: [Exporter] file %s uploaded.", file.Name())
 	}
 
 	return nil

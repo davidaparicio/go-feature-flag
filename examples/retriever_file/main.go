@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"github.com/thomaspoignant/go-feature-flag/ffcontext"
 	"log"
-	"os"
+	"log/slog"
 	"time"
 
 	"github.com/thomaspoignant/go-feature-flag/exporter/fileexporter"
@@ -18,7 +18,7 @@ func main() {
 	// Init ffclient with a file retriever.
 	err := ffclient.Init(ffclient.Config{
 		PollingInterval: 10 * time.Second,
-		Logger:          log.New(os.Stdout, "", 0),
+		LeveledLogger:   slog.Default(),
 		Context:         context.Background(),
 		Retriever: &fileretriever.Retriever{
 			Path: "examples/retriever_file/flags.goff.yaml",
@@ -42,6 +42,7 @@ func main() {
 	user1 := ffcontext.
 		NewEvaluationContextBuilder("aea2fdc1-b9a0-417a-b707-0c9083de68e3").
 		AddCustom("anonymous", true).
+		AddCustom("environment", "dev").
 		Build()
 	user2 := ffcontext.NewEvaluationContext("332460b9-a8aa-4f7a-bc5d-9cc33632df9a")
 	user3 := ffcontext.NewEvaluationContextBuilder("785a14bf-d2c5-4caa-9c70-2bbc4e3732a5").

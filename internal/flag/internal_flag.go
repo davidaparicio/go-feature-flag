@@ -1,17 +1,19 @@
 package flag
 
 import (
+	"encoding/json"
 	"fmt"
-	"github.com/thomaspoignant/go-feature-flag/ffcontext"
+	"maps"
 	"time"
 
+	"github.com/thomaspoignant/go-feature-flag/ffcontext"
+	"github.com/thomaspoignant/go-feature-flag/gofferror"
 	"github.com/thomaspoignant/go-feature-flag/internal/internalerror"
 	"github.com/thomaspoignant/go-feature-flag/internal/utils"
 )
 
 const (
 	PercentageMultiplier = float64(1000)
-	MaxPercentage        = uint32(100 * PercentageMultiplier)
 )
 
 // InternalFlag is the internal representation of a flag when using go-feature-flag.
@@ -24,6 +26,9 @@ type InternalFlag struct {
 	// Rules is the list of Rule for this flag.
 	// This an optional field.
 	Rules *[]Rule `json:"targeting,omitempty" yaml:"targeting,omitempty" toml:"targeting,omitempty"`
+
+	// BucketingKey defines a source for a dynamic targeting key
+	BucketingKey *string `json:"bucketingKey,omitempty" yaml:"bucketingKey,omitempty" toml:"bucketingKey,omitempty"`
 
 	// DefaultRule is the originalRule applied after checking that any other rules
 	// matched the user.
@@ -61,13 +66,32 @@ func (f *InternalFlag) Value(
 	evaluationCtx ffcontext.Context,
 	flagContext Context,
 ) (interface{}, ResolutionDetails) {
-	f.applyScheduledRolloutSteps()
-
-	if flagContext.Environment != "" {
-		evaluationCtx.AddCustomAttribute("env", flagContext.Environment)
+	evaluationDate := DateFromContextOrDefault(evaluationCtx, time.Now())
+	flag, err := f.applyScheduledRolloutSteps(evaluationDate)
+	if err != nil {
+		return flagContext.DefaultSdkValue, ResolutionDetails{
+			Variant:   VariationSDKDefault,
+			Reason:    ReasonError,
+			ErrorCode: ErrorCodeGeneral,
+		}
 	}
 
-	if f.IsDisable() || f.isExperimentationOver() {
+	if flagContext.EvaluationContextEnrichment != nil {
+		maps.Copy(evaluationCtx.GetCustom(), flagContext.EvaluationContextEnrichment)
+	}
+
+	key, keyError := flag.GetBucketingKeyValue(evaluationCtx)
+	if keyError != nil {
+		return flagContext.DefaultSdkValue, ResolutionDetails{
+			Variant:      VariationSDKDefault,
+			Reason:       ReasonError,
+			ErrorCode:    ErrorCodeTargetingKeyMissing,
+			ErrorMessage: keyError.Error(),
+			Metadata:     f.GetMetadata(),
+		}
+	}
+
+	if flag.IsDisable() || flag.isExperimentationOver(evaluationDate) {
 		return flagContext.DefaultSdkValue, ResolutionDetails{
 			Variant:   VariationSDKDefault,
 			Reason:    ReasonDisabled,
@@ -76,24 +100,24 @@ func (f *InternalFlag) Value(
 		}
 	}
 
-	variationSelection, err := f.selectVariation(flagName, evaluationCtx)
+	variationSelection, err := flag.selectVariation(flagName, key, evaluationCtx)
 	if err != nil {
 		return flagContext.DefaultSdkValue,
 			ResolutionDetails{
 				Variant:   VariationSDKDefault,
 				Reason:    ReasonError,
 				ErrorCode: ErrorFlagConfiguration,
-				Metadata:  f.GetMetadata(),
+				Metadata:  flag.GetMetadata(),
 			}
 	}
 
-	return f.GetVariationValue(variationSelection.name), ResolutionDetails{
+	return flag.GetVariationValue(variationSelection.name), ResolutionDetails{
 		Variant:   variationSelection.name,
 		Reason:    variationSelection.reason,
 		RuleIndex: variationSelection.ruleIndex,
 		RuleName:  variationSelection.ruleName,
 		Cacheable: variationSelection.cacheable,
-		Metadata:  f.GetMetadata(),
+		Metadata:  flag.GetMetadata(),
 	}
 }
 
@@ -125,13 +149,13 @@ func (f *InternalFlag) isCacheable() bool {
 
 // selectVariation is doing the magic to select the variation that should be used for this specific user
 // to always affect the user to the same segment we are using a hash of the flag name + key
-func (f *InternalFlag) selectVariation(flagName string, ctx ffcontext.Context) (*variationSelection, error) {
-	hashID := utils.Hash(flagName+ctx.GetKey()) % MaxPercentage
+func (f *InternalFlag) selectVariation(
+	flagName string, key string, ctx ffcontext.Context) (*variationSelection, error) {
 	hasRule := len(f.GetRules()) != 0
 	// Check all targeting in order, the first to match will be the one used.
 	if hasRule {
 		for ruleIndex, target := range f.GetRules() {
-			variationName, err := target.Evaluate(ctx, hashID, false)
+			variationName, err := target.Evaluate(key, ctx, flagName, false)
 			if err != nil {
 				// the targeting does not apply
 				if _, ok := err.(*internalerror.RuleNotApply); ok {
@@ -154,7 +178,7 @@ func (f *InternalFlag) selectVariation(flagName string, ctx ffcontext.Context) (
 		return nil, fmt.Errorf("no default targeting for the flag")
 	}
 
-	variationName, err := f.GetDefaultRule().Evaluate(ctx, hashID, true)
+	variationName, err := f.GetDefaultRule().Evaluate(key, ctx, flagName, true)
 	if err != nil {
 		return nil, err
 	}
@@ -170,56 +194,69 @@ func (f *InternalFlag) selectVariation(flagName string, ctx ffcontext.Context) (
 // nolint: gocognit
 // applyScheduledRolloutSteps is checking if the flag has a scheduled rollout configured.
 // If yes we merge the changes to the current flag.
-func (f *InternalFlag) applyScheduledRolloutSteps() {
-	evaluationDate := time.Now()
-	if f.Scheduled != nil {
-		for _, steps := range *f.Scheduled {
-			if steps.Date != nil && steps.Date.Before(evaluationDate) {
-				f.Rules = MergeSetOfRules(f.GetRules(), steps.GetRules())
-				if steps.Disable != nil {
-					f.Disable = steps.Disable
-				}
+func (f *InternalFlag) applyScheduledRolloutSteps(evaluationDate time.Time) (*InternalFlag, error) {
+	if f.Scheduled == nil {
+		return f, nil
+	}
 
-				if steps.TrackEvents != nil {
-					f.TrackEvents = steps.TrackEvents
-				}
+	// We are doing a deep copy the flag to avoid modifying the original flag.
+	// The deep copy is done to fix this issue https://github.com/thomaspoignant/go-feature-flag/issues/2256
+	data, err := json.Marshal(f)
+	if err != nil {
+		return &InternalFlag{}, err
+	}
+	var flagCopy *InternalFlag
+	if err := json.Unmarshal(data, &flagCopy); err != nil {
+		return &InternalFlag{}, err
+	}
 
-				if steps.DefaultRule != nil {
-					f.DefaultRule.MergeRules(*steps.DefaultRule)
-				}
+	// We apply the scheduled rollout
+	for _, steps := range *f.Scheduled {
+		if steps.Date != nil && (steps.Date.Before(evaluationDate) || steps.Date.Equal(evaluationDate)) {
+			flagCopy.Rules = MergeSetOfRules(f.GetRules(), steps.GetRules())
+			if steps.Disable != nil {
+				flagCopy.Disable = steps.Disable
+			}
 
-				if steps.Variations != nil {
-					for key, value := range steps.GetVariations() {
-						f.GetVariations()[key] = value
-					}
-				}
+			if steps.TrackEvents != nil {
+				flagCopy.TrackEvents = steps.TrackEvents
+			}
 
-				if steps.Version != nil {
-					f.Version = steps.Version
-				}
+			if steps.DefaultRule != nil {
+				flagCopy.DefaultRule.MergeRules(*steps.DefaultRule)
+			}
 
-				if steps.Experimentation != nil {
-					if f.Experimentation == nil {
-						f.Experimentation = &ExperimentationRollout{}
-					}
-					if steps.Experimentation.Start != nil {
-						f.Experimentation.End = steps.Experimentation.End
-					}
-					if steps.Experimentation.End != nil {
-						f.Experimentation.End = steps.Experimentation.End
-					}
+			if steps.Variations != nil {
+				for key, value := range steps.GetVariations() {
+					flagCopy.GetVariations()[key] = value
+				}
+			}
+
+			if steps.Version != nil {
+				flagCopy.Version = steps.Version
+			}
+
+			if steps.Experimentation != nil {
+				if flagCopy.Experimentation == nil {
+					flagCopy.Experimentation = &ExperimentationRollout{}
+				}
+				if steps.Experimentation.Start != nil {
+					flagCopy.Experimentation.End = steps.Experimentation.End
+				}
+				if steps.Experimentation.End != nil {
+					flagCopy.Experimentation.End = steps.Experimentation.End
 				}
 			}
 		}
 	}
+	return flagCopy, nil
 }
 
 // isExperimentationOver checks if we are in an experimentation or not
-func (f *InternalFlag) isExperimentationOver() bool {
-	now := time.Now()
+func (f *InternalFlag) isExperimentationOver(evaluationDate time.Time) bool {
 	return f.Experimentation != nil &&
-		((f.Experimentation.Start != nil && now.Before(*f.Experimentation.Start)) ||
-			(f.Experimentation.End != nil && now.After(*f.Experimentation.End)))
+		((f.Experimentation.Start != nil && evaluationDate.Before(*f.Experimentation.Start)) ||
+			(f.Experimentation.End != nil && evaluationDate.After(*f.Experimentation.End)))
 }
 
 // IsValid is checking if the current flag is valid.
@@ -228,9 +265,12 @@ func (f *InternalFlag) IsValid() error {
 		return fmt.Errorf("no variation available")
 	}
 
-	// Check that all variation have the same types
+	// Check that all variation has the same types
 	expectedVarType := ""
-	for _, value := range f.GetVariations() {
+	for name, value := range f.GetVariations() {
+		if value == nil {
+			return fmt.Errorf("nil value for variation: %s", name)
+		}
 		if expectedVarType != "" {
 			currentType, err := utils.JSONTypeExtractor(*value)
 			if err != nil {
@@ -255,13 +295,13 @@ func (f *InternalFlag) IsValid() error {
 
 	const isDefaultRule = true
 	// Validate rules
-	if err := f.GetDefaultRule().IsValid(isDefaultRule); err != nil {
+	if err := f.GetDefaultRule().IsValid(isDefaultRule, f.GetVariations()); err != nil {
 		return err
 	}
 
 	ruleNames := map[string]interface{}{}
 	for _, rule := range f.GetRules() {
-		if err := rule.IsValid(!isDefaultRule); err != nil {
+		if err := rule.IsValid(!isDefaultRule, f.GetVariations()); err != nil {
 			return err
 		}
 
@@ -339,10 +379,51 @@ func (f *InternalFlag) GetVariationValue(name string) interface{} {
 	return nil
 }
 
+// GetBucketingKey return the name of the custom bucketing key if we are using one.
+func (f *InternalFlag) GetBucketingKey() string {
+	if f.BucketingKey == nil {
+		return ""
+	}
+	return *f.BucketingKey
+}
+
+// GetBucketingKeyValue return the value of the bucketing key from the context
+func (f *InternalFlag) GetBucketingKeyValue(ctx ffcontext.Context) (string, error) {
+	if f.BucketingKey != nil {
+		key := f.GetBucketingKey()
+		if key == "" {
+			return ctx.GetKey(), nil
+		}
+		value := ctx.GetCustom()[key]
+		switch v := value.(type) {
+		case string:
+			if v == "" {
+				return "", &gofferror.EmptyBucketingKeyError{Message: "Empty bucketing key"}
+			}
+			return v, nil
+		default:
+			return "", fmt.Errorf("invalid bucketing key")
+		}
+	}
+
+	if ctx.GetKey() == "" {
+		return "", &gofferror.EmptyBucketingKeyError{Message: "Empty targeting key"}
+	}
+
+	return ctx.GetKey(), nil
+}
+
 // GetMetadata return the metadata associated to the flag
 func (f *InternalFlag) GetMetadata() map[string]interface{} {
 	if f.Metadata == nil {
 		return nil
 	}
 	return *f.Metadata
+}
+
+func DateFromContextOrDefault(ctx ffcontext.Context, defaultDate time.Time) time.Time {
+	if ctx == nil || ctx.ExtractGOFFProtectedFields().CurrentDateTime == nil {
+		return defaultDate
+	}
+	return *ctx.ExtractGOFFProtectedFields().CurrentDateTime
 }

@@ -3,6 +3,10 @@ package s3exporterv2
 import (
 	"context"
 	"fmt"
+	"log/slog"
+	"os"
+	"sync"
+
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/feature/s3/manager"
@@ -10,9 +14,6 @@ import (
 	"github.com/thomaspoignant/go-feature-flag/exporter"
 	"github.com/thomaspoignant/go-feature-flag/exporter/fileexporter"
 	"github.com/thomaspoignant/go-feature-flag/utils/fflog"
-	"log"
-	"os"
-	"sync"
 )
 
 type Exporter struct {
@@ -50,8 +51,16 @@ type Exporter struct {
 	// Default: SNAPPY
 	ParquetCompressionCodec string
 
+	// S3ClientOptions is a list of functional options to configure the S3 client.
+	// Provide additional functional options to further configure the behavior of the client,
+	// such as changing the client's endpoint or adding custom middleware behavior.
+	// For more information about the options, please check:
+	// https://pkg.go.dev/github.com/aws/aws-sdk-go-v2/service/s3#Options
+	S3ClientOptions []func(*s3.Options)
+
 	s3Uploader UploaderAPI
 	init       sync.Once
+	ffLogger   *fflog.FFLogger
 }
 
 func (f *Exporter) initializeUploader(ctx context.Context) error {
@@ -66,14 +75,14 @@ func (f *Exporter) initializeUploader(ctx context.Context) error {
 			f.AwsConfig = &cfg
 		}
 
-		client := s3.NewFromConfig(*f.AwsConfig)
+		client := s3.NewFromConfig(*f.AwsConfig, f.S3ClientOptions...)
 		f.s3Uploader = manager.NewUploader(client)
 	})
 	return initErr
 }
 
 // Export is saving a collection of events in a file.
-func (f *Exporter) Export(ctx context.Context, logger *log.Logger, featureEvents []exporter.FeatureEvent) error {
+func (f *Exporter) Export(ctx context.Context, logger *fflog.FFLogger, featureEvents []exporter.FeatureEvent) error {
 	if f.s3Uploader == nil {
 		initErr := f.initializeUploader(ctx)
 		if initErr != nil {
@@ -89,7 +98,7 @@ func (f *Exporter) Export(ctx context.Context, logger *log.Logger, featureEvents
 	defer func() { _ = os.Remove(outputDir) }()
 
 	// We call the File data exporter to get the file in the right format.
-	// Files will be put in the temp directory, so we will be able to upload them to Exporter from there.
+	// Files will be put in the temp directory, so we will be able to upload them to DeprecatedExporter from there.
 	fileExporter := fileexporter.Exporter{
 		Format:                  f.Format,
 		OutputDir:               outputDir,
@@ -102,7 +111,7 @@ func (f *Exporter) Export(ctx context.Context, logger *log.Logger, featureEvents
 		return err
 	}
 
-	// Upload all the files in the folder to Exporter
+	// Upload all the files in the folder to DeprecatedExporter
 	files, err := os.ReadDir(outputDir)
 	if err != nil {
 		return err
@@ -111,7 +120,7 @@ func (f *Exporter) Export(ctx context.Context, logger *log.Logger, featureEvents
 		// read file
 		of, err := os.Open(outputDir + "/" + file.Name())
 		if err != nil {
-			fflog.Printf(logger, "error: [S3Exporter] impossible to open the file %s/%s", outputDir, file.Name())
+			f.ffLogger.Error("[S3Exporter] impossible to open the file", slog.String("path", outputDir+"/"+file.Name()))
 			continue
 		}
 
@@ -125,7 +134,7 @@ func (f *Exporter) Export(ctx context.Context, logger *log.Logger, featureEvents
 			return err
 		}
 
-		fflog.Printf(logger, "info: [S3Exporter] file %s uploaded.", result.Location)
+		f.ffLogger.Info("[S3Exporter] file uploaded.", slog.String("location", result.Location))
 	}
 	return nil
 }

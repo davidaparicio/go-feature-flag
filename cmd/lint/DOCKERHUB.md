@@ -1,5 +1,11 @@
 # GO Feature Flag Lint cli
 
+![Status](https://img.shields.io/badge/status-deprecated-red)
+
+> [!WARNING]  
+> The linter command has been deprecated in favor of the GO Feature Flag Command Line.
+> Check the documentation for the [GO Feature Flag Command Line](http://gofeatureflag.org/docs/tooling/linter) for more information.
+
 The lint command lint tool validates that a flags file can be parsed by GO Feature Flag.
 
 ## How to use this image
@@ -7,7 +13,7 @@ The lint command lint tool validates that a flags file can be parsed by GO Featu
 ```shell
 docker run \
   -v $(pwd)/your/configuration_folder:/config \
-  thomaspoignant/go-feature-flag-lint:latest \
+  gofeatureflag/go-feature-flag-lint:latest \
   --input-file=/config/my-go-feature-flag-config.yaml \
   --input-format=yaml
 ```

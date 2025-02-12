@@ -3,12 +3,14 @@ package githubretriever
 import (
 	"context"
 	"fmt"
+	"io"
 	"net/http"
+	"strconv"
+	"strings"
 	"time"
 
-	httpretriever "github.com/thomaspoignant/go-feature-flag/retriever/httpretriever"
-
 	"github.com/thomaspoignant/go-feature-flag/internal"
+	"github.com/thomaspoignant/go-feature-flag/retriever/shared"
 )
 
 // Retriever is a configuration struct for a GitHub retriever.
@@ -21,6 +23,10 @@ type Retriever struct {
 
 	// httpClient is the http.Client if you want to override it.
 	httpClient internal.HTTPClient
+
+	// rate limit fields
+	rateLimitRemaining int
+	rateLimitReset     time.Time
 }
 
 func (r *Retriever) Retrieve(ctx context.Context) ([]byte, error) {
@@ -42,28 +48,59 @@ func (r *Retriever) Retrieve(ctx context.Context) ([]byte, error) {
 		header.Add("Authorization", fmt.Sprintf("Bearer %s", r.GithubToken))
 	}
 
+	if r.rateLimitRemaining <= 0 && time.Now().Before(r.rateLimitReset) {
+		return nil, fmt.Errorf("rate limit exceeded. Next call will be after %s", r.rateLimitReset)
+	}
+
 	URL := fmt.Sprintf(
 		"https://api.github.com/repos/%s/contents/%s?ref=%s",
 		r.RepositorySlug,
 		r.FilePath,
 		branch)
 
-	httpRetriever := httpretriever.Retriever{
-		URL:     URL,
-		Method:  http.MethodGet,
-		Header:  header,
-		Timeout: r.Timeout,
+	resp, err := shared.CallHTTPAPI(ctx, URL, http.MethodGet, "", r.Timeout, header, r.httpClient)
+	if err != nil {
+		return nil, err
 	}
+	defer func() { _ = resp.Body.Close() }()
 
-	if r.httpClient != nil {
-		httpRetriever.SetHTTPClient(r.httpClient)
+	r.updateRateLimit(resp.Header)
+
+	if resp.StatusCode > 399 {
+		// Collect the headers to add in the error message
+		ghHeaders := map[string]string{}
+		for name := range resp.Header {
+			if strings.HasPrefix(name, "X-") {
+				ghHeaders[name] = resp.Header.Get(name)
+			}
+		}
+
+		return nil, fmt.Errorf("request to %s failed with code %d."+
+			" GitHub Headers: %v", URL, resp.StatusCode, ghHeaders)
 	}
-
-	return httpRetriever.Retrieve(ctx)
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, err
+	}
+	return body, nil
 }
 
 // SetHTTPClient is here if you want to override the default http.Client we are using.
 // It is also used for the tests.
 func (r *Retriever) SetHTTPClient(client internal.HTTPClient) {
 	r.httpClient = client
+}
+
+func (r *Retriever) updateRateLimit(headers http.Header) {
+	if remaining := headers.Get("X-RateLimit-Remaining"); remaining != "" {
+		if remainingInt, err := strconv.Atoi(remaining); err == nil {
+			r.rateLimitRemaining = remainingInt
+		}
+	}
+
+	if reset := headers.Get("X-RateLimit-Reset"); reset != "" {
+		if resetInt, err := strconv.ParseInt(reset, 10, 64); err == nil {
+			r.rateLimitReset = time.Unix(resetInt, 0)
+		}
+	}
 }

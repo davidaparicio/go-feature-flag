@@ -2,13 +2,6 @@ package service
 
 import (
 	"fmt"
-	"github.com/thomaspoignant/go-feature-flag/exporter"
-	"github.com/thomaspoignant/go-feature-flag/exporter/s3exporterv2"
-	"github.com/thomaspoignant/go-feature-flag/exporter/sqsexporter"
-	"github.com/thomaspoignant/go-feature-flag/notifier"
-	"github.com/thomaspoignant/go-feature-flag/notifier/slacknotifier"
-	"github.com/thomaspoignant/go-feature-flag/notifier/webhooknotifier"
-	"github.com/thomaspoignant/go-feature-flag/retriever/s3retrieverv2"
 	"net/http"
 	"testing"
 	"time"
@@ -16,17 +9,32 @@ import (
 	"github.com/stretchr/testify/assert"
 	ffclient "github.com/thomaspoignant/go-feature-flag"
 	"github.com/thomaspoignant/go-feature-flag/cmd/relayproxy/config"
+	"github.com/thomaspoignant/go-feature-flag/exporter"
+	"github.com/thomaspoignant/go-feature-flag/exporter/azureexporter"
 	"github.com/thomaspoignant/go-feature-flag/exporter/fileexporter"
 	"github.com/thomaspoignant/go-feature-flag/exporter/gcstorageexporter"
+	"github.com/thomaspoignant/go-feature-flag/exporter/kafkaexporter"
+	"github.com/thomaspoignant/go-feature-flag/exporter/kinesisexporter"
 	"github.com/thomaspoignant/go-feature-flag/exporter/logsexporter"
+	"github.com/thomaspoignant/go-feature-flag/exporter/pubsubexporter"
+	"github.com/thomaspoignant/go-feature-flag/exporter/s3exporterv2"
+	"github.com/thomaspoignant/go-feature-flag/exporter/sqsexporter"
 	"github.com/thomaspoignant/go-feature-flag/exporter/webhookexporter"
+	"github.com/thomaspoignant/go-feature-flag/notifier"
+	"github.com/thomaspoignant/go-feature-flag/notifier/discordnotifier"
+	"github.com/thomaspoignant/go-feature-flag/notifier/microsoftteamsnotifier"
+	"github.com/thomaspoignant/go-feature-flag/notifier/slacknotifier"
+	"github.com/thomaspoignant/go-feature-flag/notifier/webhooknotifier"
 	"github.com/thomaspoignant/go-feature-flag/retriever"
+	"github.com/thomaspoignant/go-feature-flag/retriever/bitbucketretriever"
 	"github.com/thomaspoignant/go-feature-flag/retriever/fileretriever"
 	"github.com/thomaspoignant/go-feature-flag/retriever/gcstorageretriever"
 	"github.com/thomaspoignant/go-feature-flag/retriever/githubretriever"
 	"github.com/thomaspoignant/go-feature-flag/retriever/gitlabretriever"
 	"github.com/thomaspoignant/go-feature-flag/retriever/httpretriever"
+	"github.com/thomaspoignant/go-feature-flag/retriever/s3retrieverv2"
 	"github.com/xitongsys/parquet-go/parquet"
+	"go.uber.org/zap"
 )
 
 func Test_initRetriever(t *testing.T) {
@@ -154,7 +162,8 @@ func Test_initRetriever(t *testing.T) {
 				Timeout: 10000000000,
 			},
 			wantType: &httpretriever.Retriever{},
-		}, {
+		},
+		{
 			name:    "Convert Google storage Retriever",
 			wantErr: assert.NoError,
 			conf: &config.RetrieverConf{
@@ -175,6 +184,47 @@ func Test_initRetriever(t *testing.T) {
 			conf: &config.RetrieverConf{
 				Kind: "unknown",
 			},
+		},
+		{
+			name:    "Convert Bitbucket Retriever default branch",
+			wantErr: assert.NoError,
+			conf: &config.RetrieverConf{
+				Kind:           "bitbucket",
+				RepositorySlug: "gofeatureflag/config-repo",
+				Path:           "flags/config.goff.yaml",
+				AuthToken:      "XXX_BITBUCKET_TOKEN",
+				BaseURL:        "https://api.bitbucket.goff.org",
+			},
+			want: &bitbucketretriever.Retriever{
+				RepositorySlug: "gofeatureflag/config-repo",
+				Branch:         "main",
+				FilePath:       "flags/config.goff.yaml",
+				BitBucketToken: "XXX_BITBUCKET_TOKEN",
+				BaseURL:        "https://api.bitbucket.goff.org",
+				Timeout:        10000000000,
+			},
+			wantType: &bitbucketretriever.Retriever{},
+		},
+		{
+			name:    "Convert Bitbucket Retriever branch specified",
+			wantErr: assert.NoError,
+			conf: &config.RetrieverConf{
+				Kind:           "bitbucket",
+				Branch:         "develop",
+				RepositorySlug: "gofeatureflag/config-repo",
+				Path:           "flags/config.goff.yaml",
+				AuthToken:      "XXX_BITBUCKET_TOKEN",
+				BaseURL:        "https://api.bitbucket.goff.org",
+			},
+			want: &bitbucketretriever.Retriever{
+				RepositorySlug: "gofeatureflag/config-repo",
+				Branch:         "develop",
+				FilePath:       "flags/config.goff.yaml",
+				BitBucketToken: "XXX_BITBUCKET_TOKEN",
+				BaseURL:        "https://api.bitbucket.goff.org",
+				Timeout:        10000000000,
+			},
+			wantType: &bitbucketretriever.Retriever{},
 		},
 	}
 	for _, tt := range tests {
@@ -197,7 +247,7 @@ func Test_initExporter(t *testing.T) {
 		conf                   *config.ExporterConf
 		want                   ffclient.DataExporter
 		wantErr                assert.ErrorAssertionFunc
-		wantType               exporter.Exporter
+		wantType               exporter.CommonExporter
 		skipCompleteValidation bool
 	}{
 		{
@@ -305,6 +355,23 @@ func Test_initExporter(t *testing.T) {
 			skipCompleteValidation: true,
 		},
 		{
+			name:    "Convert PubSubExporter",
+			wantErr: assert.NoError,
+			conf: &config.ExporterConf{
+				Kind:      "pubsub",
+				ProjectID: "fake-project-id",
+				Topic:     "fake-topic",
+			},
+			want: ffclient.DataExporter{
+				Exporter: &pubsubexporter.Exporter{
+					ProjectID: "fake-project-id",
+					Topic:     "fake-topic",
+				},
+			},
+			wantType:               &pubsubexporter.Exporter{},
+			skipCompleteValidation: true,
+		},
+		{
 			name:    "Convert GoogleStorageExporter",
 			wantErr: assert.NoError,
 			conf: &config.ExporterConf{
@@ -327,10 +394,77 @@ func Test_initExporter(t *testing.T) {
 			},
 			wantType: &gcstorageexporter.Exporter{},
 		},
+		{
+			name:    "Convert KafkaExporter",
+			wantErr: assert.NoError,
+			conf: &config.ExporterConf{
+				Kind:             "kafka",
+				MaxEventInMemory: 1990,
+				Kafka: kafkaexporter.Settings{
+					Topic:     "example-topic",
+					Addresses: []string{"addr1", "addr2"},
+				},
+			},
+			want: ffclient.DataExporter{
+				FlushInterval:    config.DefaultExporter.FlushInterval,
+				MaxEventInMemory: 1990,
+				Exporter: &kafkaexporter.Exporter{
+					Format: config.DefaultExporter.Format,
+					Settings: kafkaexporter.Settings{
+						Topic:     "example-topic",
+						Addresses: []string{"addr1", "addr2"},
+					},
+				},
+			},
+			wantType: &kafkaexporter.Exporter{},
+		},
+		{
+			name:    "AWS Kinesis Exporter",
+			wantErr: assert.NoError,
+			conf: &config.ExporterConf{
+				Kind:       "kinesis",
+				StreamName: "my-stream",
+			},
+			want: ffclient.DataExporter{
+				FlushInterval:    10 * time.Millisecond,
+				MaxEventInMemory: config.DefaultExporter.MaxEventInMemory,
+				Exporter: &kinesisexporter.Exporter{
+					Format: config.DefaultExporter.Format,
+					Settings: kinesisexporter.NewSettings(
+						kinesisexporter.WithStreamArn("my-stream"),
+					),
+				},
+			},
+			wantType:               &kinesisexporter.Exporter{},
+			skipCompleteValidation: true,
+		},
+		{
+			name:    "Azure Blob Storage Exporter",
+			wantErr: assert.NoError,
+			conf: &config.ExporterConf{
+				Kind:             "azureBlobStorage",
+				Container:        "my-container",
+				Path:             "/my-path/",
+				MaxEventInMemory: 1990,
+			},
+			want: ffclient.DataExporter{
+				FlushInterval:    config.DefaultExporter.FlushInterval,
+				MaxEventInMemory: 1990,
+				Exporter: &azureexporter.Exporter{
+					Container:               "my-container",
+					Format:                  config.DefaultExporter.Format,
+					Path:                    "/my-path/",
+					Filename:                config.DefaultExporter.FileName,
+					CsvTemplate:             config.DefaultExporter.CsvFormat,
+					ParquetCompressionCodec: config.DefaultExporter.ParquetCompressionCodec,
+				},
+			},
+			wantType: &azureexporter.Exporter{},
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got, err := initExporter(tt.conf)
+			got, err := initDataExporter(tt.conf)
 			tt.wantErr(t, err)
 			assert.IsType(t, tt.wantType, got.Exporter)
 			if err == nil && !tt.skipCompleteValidation {
@@ -355,18 +489,28 @@ func Test_initNotifier(t *testing.T) {
 			args: args{
 				c: []config.NotifierConf{
 					{
-						Kind:            config.SlackNotifier,
-						SlackWebhookURL: "http:xxxx.xxx",
+						Kind:       config.SlackNotifier,
+						WebhookURL: "http:xxxx.xxx",
 					},
 					{
 						Kind:        config.WebhookNotifier,
 						EndpointURL: "http:yyyy.yyy",
+					},
+					{
+						Kind:       config.MicrosoftTeamsNotifier,
+						WebhookURL: "http:zzzz.zzz",
+					},
+					{
+						Kind:       config.DiscordNotifier,
+						WebhookURL: "http:aaaa.aaa",
 					},
 				},
 			},
 			want: []notifier.Notifier{
 				&slacknotifier.Notifier{SlackWebhookURL: "http:xxxx.xxx"},
 				&webhooknotifier.Notifier{EndpointURL: "http:yyyy.yyy"},
+				&microsoftteamsnotifier.Notifier{MicrosoftTeamsWebhookURL: "http:zzzz.zzz"},
+				&discordnotifier.Notifier{DiscordWebhookURL: "http:aaaa.aaa"},
 			},
 			wantErr: assert.NoError,
 		},
@@ -380,4 +524,16 @@ func Test_initNotifier(t *testing.T) {
 			assert.Equalf(t, tt.want, got, "initNotifier(%v)", tt.args.c)
 		})
 	}
+}
+
+func TestNewGoFeatureFlagClient_ProxyConfNil(t *testing.T) {
+	// Create a logger for testing
+	logger := zap.NewNop()
+
+	// Call NewGoFeatureFlagClient with nil proxyConf
+	goff, err := NewGoFeatureFlagClient(nil, logger, nil)
+
+	// Assert that the function returns nil and an error
+	assert.Nil(t, goff, "Expected GoFeatureFlag client to be nil when proxyConf is nil")
+	assert.EqualError(t, err, "proxy config is empty", "Expected error message to indicate empty proxy config")
 }

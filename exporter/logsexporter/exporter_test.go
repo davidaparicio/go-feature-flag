@@ -2,16 +2,16 @@ package logsexporter_test
 
 import (
 	"context"
-	"log"
+	"log/slog"
 	"os"
 	"testing"
 
-	"github.com/thomaspoignant/go-feature-flag/exporter/logsexporter"
-
 	"github.com/stretchr/testify/assert"
-
 	"github.com/thomaspoignant/go-feature-flag/exporter"
+	"github.com/thomaspoignant/go-feature-flag/exporter/logsexporter"
 	"github.com/thomaspoignant/go-feature-flag/testutils"
+	"github.com/thomaspoignant/go-feature-flag/testutils/slogutil"
+	"github.com/thomaspoignant/go-feature-flag/utils/fflog"
 )
 
 func TestLog_Export(t *testing.T) {
@@ -37,12 +37,12 @@ func TestLog_Export(t *testing.T) {
 					Variation: "Default", Value: "YO", Default: false,
 				},
 			}},
-			expectedLog: "^\\[" + testutils.RFC3339Regex + "\\] user=\"ABCD\", flag=\"random-key\", value=\"YO\"\n",
+			expectedLog: "user=\"ABCD\", flag=\"random-key\", value=\"YO\"\n",
 		},
 		{
 			name: "Custom format",
 			fields: fields{
-				LogFormat: "key=\"{{ .Key}}\" [{{ .FormattedDate}}]",
+				LogFormat: "key=\"{{ .Key}}\"",
 			},
 			args: args{featureEvents: []exporter.FeatureEvent{
 				{
@@ -50,7 +50,7 @@ func TestLog_Export(t *testing.T) {
 					Variation: "Default", Value: "YO", Default: false,
 				},
 			}},
-			expectedLog: "key=\"random-key\" \\[" + testutils.RFC3339Regex + "\\]\n",
+			expectedLog: "key=\"random-key\"\n",
 		},
 		{
 			name: "LogFormat error",
@@ -87,8 +87,8 @@ func TestLog_Export(t *testing.T) {
 			}
 
 			logFile, _ := os.CreateTemp("", "")
-			logger := log.New(logFile, "", 0)
-
+			textHandler := slogutil.MessageOnlyHandler{Writer: logFile}
+			logger := &fflog.FFLogger{LeveledLogger: slog.New(&textHandler)}
 			err := f.Export(context.Background(), logger, tt.args.featureEvents)
 
 			if tt.wantErr {
@@ -96,7 +96,7 @@ func TestLog_Export(t *testing.T) {
 				return
 			}
 
-			assert.NoError(t, err, "Exporter exporter should not throw errors")
+			assert.NoError(t, err, "DeprecatedExporter should not throw errors")
 
 			logContent, _ := os.ReadFile(logFile.Name())
 			assert.Regexp(t, tt.expectedLog, string(logContent))

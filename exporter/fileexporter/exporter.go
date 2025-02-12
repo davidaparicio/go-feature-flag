@@ -3,14 +3,15 @@ package fileexporter
 import (
 	"context"
 	"fmt"
-	"log"
 	"os"
+	"path/filepath"
 	"runtime"
 	"strings"
 	"sync"
 	"text/template"
 
 	"github.com/thomaspoignant/go-feature-flag/exporter"
+	"github.com/thomaspoignant/go-feature-flag/utils/fflog"
 	"github.com/xitongsys/parquet-go-source/local"
 	"github.com/xitongsys/parquet-go/parquet"
 	"github.com/xitongsys/parquet-go/writer"
@@ -23,7 +24,6 @@ type Exporter struct {
 	Format string
 
 	// OutputDir is the location of the directory where to store the exported files
-	// It should finish with a /
 	// Default: the current directory
 	OutputDir string
 
@@ -53,7 +53,7 @@ type Exporter struct {
 }
 
 // Export is saving a collection of events in a file.
-func (f *Exporter) Export(_ context.Context, _ *log.Logger, featureEvents []exporter.FeatureEvent) error {
+func (f *Exporter) Export(_ context.Context, _ *fflog.FFLogger, featureEvents []exporter.FeatureEvent) error {
 	// Parse the template only once
 	f.initTemplates.Do(func() {
 		f.csvTemplate = exporter.ParseTemplate("csvFormat", f.CsvTemplate, exporter.DefaultCsvTemplate)
@@ -72,7 +72,19 @@ func (f *Exporter) Export(_ context.Context, _ *log.Logger, featureEvents []expo
 		return err
 	}
 
-	filePath := f.OutputDir + "/" + filename
+	// Handle empty OutputDir and remove trailing slash
+	outputDir := strings.TrimRight(f.OutputDir, "/")
+
+	var filePath string
+	if outputDir == "" {
+		filePath = filename
+	} else {
+		// Ensure OutputDir exists or create it
+		if err := os.MkdirAll(outputDir, 0755); err != nil {
+			return fmt.Errorf("failed to create output directory: %v", err)
+		}
+		filePath = filepath.Join(outputDir, filename)
+	}
 
 	if f.Format == "parquet" {
 		return f.writeParquet(filePath, featureEvents)

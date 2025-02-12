@@ -1,24 +1,28 @@
-import React from "react";
-import clsx from "clsx";
-import styles from "./styles.module.css";
-import PropTypes from "prop-types";
+import React from 'react';
+import clsx from 'clsx';
+import styles from './styles.module.css';
+import PropTypes from 'prop-types';
 
-
-SdkCardContent.prototype= {
+SdkCardContent.propTypes = {
   features: PropTypes.array.isRequired,
-}
+  badgeUrl: PropTypes.string.isRequired
+};
 export function SdkCardContent(props) {
-  return(<>
+  return (
+    <>
+      {props.badgeUrl && <><img alt="badge" src={props.badgeUrl} /><br /></>}
       {featureIcon(props.features, "remoteEval")} Remote evaluation <br />
-      {featureIcon(props.features, "localCache")} Local cache<br />
-      {featureIcon(props.features, "dynamicRefresh")} Dynamic cache refresh<br />
+      {featureIcon(props.features, "localCache")} Local cache
+      <br />
+      {featureIcon(props.features, "dynamicRefresh")} Dynamic cache refresh
+      <br />
     </>
-  )
+  );
 }
 
 function featureIcon(features, key) {
-  if(features.includes(key)){
+  if (features.includes(key)) {
     return <i className={clsx("fa-solid fa-circle-check", styles.green)}></i>;
   }
-  return <i className={clsx("fa-solid fa-person-digging", styles.orange)}></i>;
+  return <i className={clsx('fa-solid fa-person-digging', styles.orange)}></i>;
 }

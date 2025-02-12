@@ -1,10 +1,10 @@
 package utils_test
 
 import (
-	"github.com/thomaspoignant/go-feature-flag/ffcontext"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/thomaspoignant/go-feature-flag/ffcontext"
 	"github.com/thomaspoignant/go-feature-flag/internal/utils"
 )
 

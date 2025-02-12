@@ -1,19 +1,25 @@
 package api
 
 import (
+	"context"
+	"errors"
 	"fmt"
+	"net/http"
+	"strings"
+
+	"github.com/aws/aws-lambda-go/lambda"
 	"github.com/labstack/echo-contrib/echoprometheus"
 	"github.com/labstack/echo/v4"
 	"github.com/labstack/echo/v4/middleware"
-	echoSwagger "github.com/swaggo/echo-swagger"
 	custommiddleware "github.com/thomaspoignant/go-feature-flag/cmd/relayproxy/api/middleware"
+	"github.com/thomaspoignant/go-feature-flag/cmd/relayproxy/api/opentelemetry"
 	"github.com/thomaspoignant/go-feature-flag/cmd/relayproxy/config"
 	"github.com/thomaspoignant/go-feature-flag/cmd/relayproxy/controller"
 	"github.com/thomaspoignant/go-feature-flag/cmd/relayproxy/metric"
+	"github.com/thomaspoignant/go-feature-flag/cmd/relayproxy/ofrep"
 	"github.com/thomaspoignant/go-feature-flag/cmd/relayproxy/service"
+	"go.opentelemetry.io/contrib/instrumentation/github.com/labstack/echo/otelecho"
 	"go.uber.org/zap"
-	"strings"
-	"time"
 )
 
 // New is used to create a new instance of the API server
@@ -22,129 +28,133 @@ func New(config *config.Config,
 	zapLog *zap.Logger,
 ) Server {
 	s := Server{
-		config:   config,
-		services: services,
-		zapLog:   zapLog,
+		config:      config,
+		services:    services,
+		zapLog:      zapLog,
+		otelService: opentelemetry.NewOtelService(),
 	}
-	s.init()
+	s.apiEcho = echo.New()
+	s.initRoutes()
 	return s
 }
 
-// Server is the struct that represent the API server
+// Server is the struct that represents the API server
 type Server struct {
-	config       *config.Config
-	echoInstance *echo.Echo
-	services     service.Services
-	zapLog       *zap.Logger
+	config         *config.Config
+	apiEcho        *echo.Echo
+	monitoringEcho *echo.Echo
+	services       service.Services
+	zapLog         *zap.Logger
+	otelService    opentelemetry.OtelService
 }
 
-// init initialize the configuration of our API server (using echo)
-func (s *Server) init() {
-	s.echoInstance = echo.New()
-	s.echoInstance.HideBanner = true
-	s.echoInstance.HidePort = true
-	s.echoInstance.Debug = s.config.Debug
-
-	// Global Middlewares
+// initRoutes initialize the API endpoints that contain business logic and specificity for the relay proxy
+func (s *Server) initRoutes() {
+	s.apiEcho.HideBanner = true
+	s.apiEcho.HidePort = true
+	s.apiEcho.Debug = s.config.IsDebugEnabled()
+	s.apiEcho.Use(otelecho.Middleware("go-feature-flag"))
+	s.apiEcho.Use(custommiddleware.ZapLogger(s.zapLog, s.config))
+	s.apiEcho.Use(middleware.BodyDumpWithConfig(middleware.BodyDumpConfig{
+		Skipper: func(c echo.Context) bool {
+			isSwagger := strings.HasPrefix(c.Request().URL.String(), "/swagger")
+			return isSwagger || !s.zapLog.Core().Enabled(zap.DebugLevel)
+		},
+		Handler: func(_ echo.Context, reqBody []byte, _ []byte) {
+			s.zapLog.Debug("Request info", zap.ByteString("request_body", reqBody))
+		},
+	}))
 	if s.services.Metrics != (metric.Metrics{}) {
-		s.echoInstance.Use(echoprometheus.NewMiddlewareWithConfig(echoprometheus.MiddlewareConfig{
+		s.apiEcho.Use(echoprometheus.NewMiddlewareWithConfig(echoprometheus.MiddlewareConfig{
 			Subsystem:  metric.GOFFSubSystem,
 			Registerer: s.services.Metrics.Registry,
 		}))
-		s.echoInstance.GET("/metrics", echoprometheus.NewHandlerWithConfig(
-			echoprometheus.HandlerConfig{Gatherer: s.services.Metrics.Registry}))
 	}
-	s.echoInstance.Use(custommiddleware.ZapLogger(s.zapLog, s.config))
-	s.echoInstance.Use(middleware.CORSWithConfig(middleware.DefaultCORSConfig))
-	s.echoInstance.Use(middleware.Recover())
-	s.echoInstance.Use(middleware.TimeoutWithConfig(
-		middleware.TimeoutConfig{
-			Skipper: func(c echo.Context) bool {
-				// ignore websocket in the timeout
-				return strings.HasPrefix(c.Request().URL.String(), "/ws")
-			},
-			Timeout: time.Duration(s.config.RestAPITimeout) * time.Millisecond,
-		}),
-	)
+	s.apiEcho.Use(middleware.CORSWithConfig(middleware.DefaultCORSConfig))
+	s.apiEcho.Use(custommiddleware.VersionHeader(s.config))
+	s.apiEcho.Use(middleware.Recover())
 
-	// endpoints configuration
-	s.initAPIEndpoints()
-	s.initPublicEndpoints()
-	s.initWebsocketsEndpoints()
-}
-
-// initAPIEndpoints initialize the API endpoints
-func (s *Server) initAPIEndpoints() {
 	// Init controllers
 	cAllFlags := controller.NewAllFlags(s.services.GOFeatureFlagService, s.services.Metrics)
 	cFlagEval := controller.NewFlagEval(s.services.GOFeatureFlagService, s.services.Metrics)
-	cEvalDataCollector := controller.NewCollectEvalData(s.services.GOFeatureFlagService, s.services.Metrics)
+	cFlagEvalOFREP := ofrep.NewOFREPEvaluate(s.services.GOFeatureFlagService, s.services.Metrics)
+	cEvalDataCollector := controller.NewCollectEvalData(s.services.GOFeatureFlagService, s.services.Metrics, s.zapLog)
+	cRetrieverRefresh := controller.NewForceFlagsRefresh(s.services.GOFeatureFlagService, s.services.Metrics)
+	cFlagChangeAPI := controller.NewAPIFlagChange(s.services.GOFeatureFlagService, s.services.Metrics)
 
 	// Init routes
-	v1 := s.echoInstance.Group("/v1")
-	if len(s.config.APIKeys) > 0 {
-		v1.Use(middleware.KeyAuthWithConfig(middleware.KeyAuthConfig{
-			Validator: func(key string, c echo.Context) (bool, error) {
-				return s.config.APIKeyExists(key), nil
-			},
-		}))
-	}
-	v1.POST("/allflags", cAllFlags.Handler)
-	v1.POST("/feature/:flagKey/eval", cFlagEval.Handler)
-	v1.POST("/data/collector", cEvalDataCollector.Handler)
-}
-
-// initPublicEndpoints initialize the public endpoints to monitor the application
-func (s *Server) initPublicEndpoints() {
-	// Init controllers
-	cHealth := controller.NewHealth(s.services.MonitoringService)
-	cInfo := controller.NewInfo(s.services.MonitoringService)
-
-	// health Routes
-	s.echoInstance.GET("/health", cHealth.Handler)
-	s.echoInstance.GET("/info", cInfo.Handler)
-
-	// Swagger - only available if option is enabled
-	if s.config.EnableSwagger {
-		s.echoInstance.GET("/swagger/*", echoSwagger.WrapHandler)
-	}
-}
-
-// initWebsocketsEndpoints initialize the websocket endpoints
-func (s *Server) initWebsocketsEndpoints() {
-	cFlagReload := controller.NewWsFlagChange(s.services.WebsocketService, s.zapLog)
-	v1 := s.echoInstance.Group("/ws/v1")
-	v1.Use(custommiddleware.WebsocketAuthorizer(s.config))
-	v1.GET("/flag/change", cFlagReload.Handler)
+	s.addGOFFRoutes(cAllFlags, cFlagEval, cEvalDataCollector, cFlagChangeAPI)
+	s.addOFREPRoutes(cFlagEvalOFREP)
+	s.addWebsocketRoutes()
+	s.addMonitoringRoutes()
+	s.addAdminRoutes(cRetrieverRefresh)
 }
 
 // Start launch the API server
 func (s *Server) Start() {
+	// starting the monitoring server on a different port if configured
+	if s.monitoringEcho != nil {
+		go func() {
+			addressMonitoring := fmt.Sprintf("0.0.0.0:%d", s.config.MonitoringPort)
+			s.zapLog.Info(
+				"Starting monitoring",
+				zap.String("address", addressMonitoring))
+			err := s.monitoringEcho.Start(addressMonitoring)
+			if err != nil && !errors.Is(err, http.ErrServerClosed) {
+				s.zapLog.Fatal("Error starting monitoring", zap.Error(err))
+			}
+		}()
+		defer func() { _ = s.monitoringEcho.Close() }()
+	}
+
+	// start the OpenTelemetry tracing service
+	err := s.otelService.Init(context.Background(), s.zapLog, *s.config)
+	if err != nil {
+		s.zapLog.Error("error while initializing OTel, continuing without tracing enabled", zap.Error(err))
+		// we can continue because otel is not mandatory to start the server
+	}
+
+	// starting the main application
 	if s.config.ListenPort == 0 {
 		s.config.ListenPort = 1031
 	}
 	address := fmt.Sprintf("0.0.0.0:%d", s.config.ListenPort)
-
 	s.zapLog.Info(
 		"Starting go-feature-flag relay proxy ...",
 		zap.String("address", address),
 		zap.String("version", s.config.Version))
 
-	err := s.echoInstance.Start(address)
-	if err != nil {
-		s.zapLog.Fatal("impossible to start the proxy", zap.Error(err))
+	err = s.apiEcho.Start(address)
+	if err != nil && !errors.Is(err, http.ErrServerClosed) {
+		s.zapLog.Fatal("Error starting relay proxy", zap.Error(err))
 	}
 }
 
 // StartAwsLambda is starting the relay proxy as an AWS Lambda
 func (s *Server) StartAwsLambda() {
-	adapter := newAwsLambdaHandler(s.echoInstance)
-	adapter.Start()
+	lambda.Start(s.getLambdaHandler())
+}
+
+func (s *Server) getLambdaHandler() interface{} {
+	handlerMngr := newAwsLambdaHandlerManager(s.apiEcho)
+	return handlerMngr.GetAdapter(s.config.AwsLambdaAdapter)
 }
 
 // Stop shutdown the API server
-func (s *Server) Stop() {
-	err := s.echoInstance.Close()
+func (s *Server) Stop(ctx context.Context) {
+	err := s.otelService.Stop(ctx)
+	if err != nil {
+		s.zapLog.Error("impossible to stop otel", zap.Error(err))
+	}
+
+	if s.monitoringEcho != nil {
+		err = s.monitoringEcho.Close()
+		if err != nil {
+			s.zapLog.Fatal("impossible to stop monitoring", zap.Error(err))
+		}
+	}
+
+	err = s.apiEcho.Close()
 	if err != nil {
 		s.zapLog.Fatal("impossible to stop go-feature-flag relay proxy", zap.Error(err))
 	}

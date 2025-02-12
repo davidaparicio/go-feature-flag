@@ -1,16 +1,26 @@
 package flag
 
 import (
-	"errors"
+	"bytes"
+	"encoding/json"
 	"fmt"
-	"github.com/thomaspoignant/go-feature-flag/ffcontext"
+	"log/slog"
 	"sort"
 	"strings"
 	"time"
 
+	jsonlogic "github.com/diegoholiveira/jsonlogic/v3"
 	"github.com/nikunjy/rules/parser"
+	"github.com/thomaspoignant/go-feature-flag/ffcontext"
 	"github.com/thomaspoignant/go-feature-flag/internal/internalerror"
 	"github.com/thomaspoignant/go-feature-flag/internal/utils"
+)
+
+type QueryFormat = string
+
+const (
+	NikunjyQueryFormat   QueryFormat = "nikunjy"
+	JSONLogicQueryFormat QueryFormat = "jsonlogic"
 )
 
 // Rule represents a rule applied by the flag.
@@ -19,7 +29,7 @@ type Rule struct {
 	// to update the rule during scheduled rollout
 	Name *string `json:"name,omitempty" yaml:"name,omitempty" toml:"name,omitempty" jsonschema:"title=name,description=Name is the name of the rule. This field is mandatory if you want to update the rule during scheduled rollout."` // nolint: lll
 
-	// Query represents an antlr query in the nikunjy/rules format
+	// Query represents the query used to target the audience of the flag.
 	Query *string `json:"query,omitempty" yaml:"query,omitempty" toml:"query,omitempty" jsonschema:"title=query,description=The query that allow to check in the evaluation context match. Note: in the defaultRule field query is ignored."` // nolint: lll
 
 	// VariationResult represents the variation name to use if the rule apply for the user.
@@ -40,36 +50,87 @@ type Rule struct {
 	Disable *bool `json:"disable,omitempty" yaml:"disable,omitempty" toml:"disable,omitempty" jsonschema:"title=disable,description=Indicates that this rule is disabled."` // nolint: lll
 }
 
-// Evaluate is checking if the rule apply to for the user.
-// If yes it returns the variation you should use for this rule.
-func (r *Rule) Evaluate(ctx ffcontext.Context, hashID uint32, isDefault bool,
+// Evaluate is checking if the rule applies to for the user.
+// If yes, it returns the variation you should use for this rule.
+func (r *Rule) Evaluate(key string, ctx ffcontext.Context, flagName string, isDefault bool,
 ) (string, error) {
-	// Check if the rule apply for this user
-	ruleApply := isDefault || r.GetQuery() == "" || parser.Evaluate(r.GetTrimmedQuery(), utils.ContextToMap(ctx))
+	if key == "" {
+		return "", fmt.Errorf("evaluate Rule: no key")
+	}
+
+	evaluationDate := DateFromContextOrDefault(ctx, time.Now())
+	// check that we have an evaluation context
+	if ctx == nil {
+		return "", fmt.Errorf("evaluate Rule: no evaluation context")
+	}
+
+	// Check if the rule applies for this user
+	ruleApply := isDefault || evaluateRule(r.GetTrimmedQuery(), r.GetQueryFormat(), ctx)
 	if !ruleApply || (!isDefault && r.IsDisable()) {
 		return "", &internalerror.RuleNotApply{Context: ctx}
 	}
-
 	if r.ProgressiveRollout != nil {
-		variation, err := r.getVariationFromProgressiveRollout(hashID)
-		if err != nil {
-			return variation, err
-		}
-		return variation, nil
+		return r.EvaluateProgressiveRollout(key, flagName, evaluationDate)
 	}
-
 	if r.Percentages != nil && len(r.GetPercentages()) > 0 {
-		variationName, err := r.getVariationFromPercentage(hashID)
-		if err != nil {
-			return "", err
-		}
-		return variationName, nil
+		return r.EvaluatePercentageRollout(key, flagName)
 	}
-
 	if r.VariationResult != nil {
 		return r.GetVariationResult(), nil
 	}
 	return "", fmt.Errorf("error in the configuration, no variation available for this rule")
+}
+
+func evaluateRule(query string, queryFormat QueryFormat, ctx ffcontext.Context) bool {
+	if query == "" {
+		return true
+	}
+	mapCtx := utils.ContextToMap(ctx)
+	switch queryFormat {
+	case JSONLogicQueryFormat:
+		strCtx, err := json.Marshal(mapCtx)
+		if err != nil {
+			slog.Error("error while marhsalling the context for the jsonlogic query",
+				slog.Any("mapCtx", mapCtx), slog.Any("error", err))
+			return false
+		}
+		var result bytes.Buffer
+		err = jsonlogic.Apply(strings.NewReader(query), strings.NewReader(string(strCtx)), &result)
+		if err != nil {
+			slog.Error("error while evaluating the jsonlogic query",
+				slog.String("query", query), slog.Any("error", err))
+			return false
+		}
+		return utils.StrTrim(result.String()) == "true"
+	default:
+		return parser.Evaluate(query, mapCtx)
+	}
+}
+
+// EvaluateProgressiveRollout is evaluating the progressive rollout for the rule.
+func (r *Rule) EvaluateProgressiveRollout(key string, flagName string, evaluationDate time.Time) (string, error) {
+	progressiveRolloutMaxPercentage := uint32(100 * PercentageMultiplier)
+	hashID := utils.BuildHash(flagName, key, progressiveRolloutMaxPercentage)
+	variation, err := r.getVariationFromProgressiveRollout(hashID, evaluationDate)
+	if err != nil {
+		return variation, err
+	}
+	return variation, nil
+}
+
+// EvaluatePercentageRollout is evaluating the percentage rollout for the rule.
+func (r *Rule) EvaluatePercentageRollout(key string, flagName string) (string, error) {
+	m := 0.0
+	for _, percentage := range r.GetPercentages() {
+		m += percentage
+	}
+	maxPercentage := uint32(m * PercentageMultiplier)
+	hashID := utils.BuildHash(flagName, key, maxPercentage)
+	variationName, err := r.getVariationFromPercentage(hashID)
+	if err != nil {
+		return "", err
+	}
+	return variationName, nil
 }
 
 // IsDynamic is a function that allows to know if the rule has a dynamic result or not.
@@ -84,7 +145,7 @@ func (r *Rule) IsDynamic() bool {
 	return r.ProgressiveRollout != nil || (r.Percentages != nil && len(r.GetPercentages()) > 0 && !hasPercentage100)
 }
 
-func (r *Rule) getVariationFromProgressiveRollout(hash uint32) (string, error) {
+func (r *Rule) getVariationFromProgressiveRollout(hash uint32, evaluationDate time.Time) (string, error) {
 	isRolloutValid := r.ProgressiveRollout != nil &&
 		r.ProgressiveRollout.Initial != nil &&
 		r.ProgressiveRollout.Initial.Date != nil &&
@@ -95,24 +156,22 @@ func (r *Rule) getVariationFromProgressiveRollout(hash uint32) (string, error) {
 		r.ProgressiveRollout.End.Date.After(*r.ProgressiveRollout.Initial.Date)
 
 	if isRolloutValid {
-		now := time.Now()
-		if now.Before(*r.ProgressiveRollout.Initial.Date) {
+		if evaluationDate.Before(*r.ProgressiveRollout.Initial.Date) {
 			return *r.ProgressiveRollout.Initial.Variation, nil
 		}
 
 		// We are between initial and end
 		initialPercentage := r.ProgressiveRollout.Initial.getPercentage() * PercentageMultiplier
 		if r.ProgressiveRollout.End.getPercentage() == 0 || r.ProgressiveRollout.End.getPercentage() > 100 {
-			max := float64(100)
-			r.ProgressiveRollout.End.Percentage = &max
+			maxPercentage := float64(100)
+			r.ProgressiveRollout.End.Percentage = &maxPercentage
 		}
 		endPercentage := r.ProgressiveRollout.End.getPercentage() * PercentageMultiplier
-
 		nbSec := r.ProgressiveRollout.End.Date.Unix() - r.ProgressiveRollout.Initial.Date.Unix()
 		percentage := endPercentage - initialPercentage
 		percentPerSec := percentage / float64(nbSec)
 
-		c := now.Unix() - r.ProgressiveRollout.Initial.Date.Unix()
+		c := evaluationDate.Unix() - r.ProgressiveRollout.Initial.Date.Unix()
 		currentPercentage := float64(c)*percentPerSec + initialPercentage
 
 		if hash < uint32(currentPercentage) {
@@ -124,12 +183,7 @@ func (r *Rule) getVariationFromProgressiveRollout(hash uint32) (string, error) {
 }
 
 func (r *Rule) getVariationFromPercentage(hash uint32) (string, error) {
-	buckets, err := r.getPercentageBuckets()
-	if err != nil {
-		return "", err
-	}
-
-	for key, bucket := range buckets {
+	for key, bucket := range r.getPercentageBuckets() {
 		if uint32(bucket.start) <= hash && uint32(bucket.end) > hash {
 			return key, nil
 		}
@@ -138,13 +192,13 @@ func (r *Rule) getVariationFromPercentage(hash uint32) (string, error) {
 }
 
 // getPercentageBuckets compute a map containing the buckets of each variation for this rule.
-func (r *Rule) getPercentageBuckets() (map[string]percentageBucket, error) {
+func (r *Rule) getPercentageBuckets() map[string]percentageBucket {
 	percentageBuckets := make(map[string]percentageBucket, len(r.GetPercentages()))
 	percentage := r.GetPercentages()
 
 	// we need to sort the map to affect the bucket to be sure we are constantly affecting the users to the same bucket.
 	// Map are not ordered in GO, so we have to order the variationNames to be able to compute the same numbers for the
-	// buckets everytime we are in this function.
+	// buckets every time we are in this function.
 	variationNames := make([]string, 0)
 	for k := range percentage {
 		variationNames = append(variationNames, k)
@@ -159,19 +213,12 @@ func (r *Rule) getPercentageBuckets() (map[string]percentageBucket, error) {
 			startBucket = percentageBuckets[variationNames[index-1]].end
 		}
 		endBucket := startBucket + (percentage[varName] * PercentageMultiplier)
-
 		percentageBuckets[varName] = percentageBucket{
 			start: startBucket,
 			end:   endBucket,
 		}
 	}
-
-	lastElementInBuckets := percentageBuckets[variationNames[len(variationNames)-1]].end
-	if lastElementInBuckets != float64(MaxPercentage) {
-		return nil, errors.New("invalid rule because percentage are not representing 100%")
-	}
-
-	return percentageBuckets, nil
+	return percentageBuckets
 }
 
 // MergeRules is merging 2 rules.
@@ -213,7 +260,7 @@ func (r *Rule) MergeRules(updatedRule Rule) {
 }
 
 // IsValid is checking if the rule is valid
-func (r *Rule) IsValid(defaultRule bool) error {
+func (r *Rule) IsValid(defaultRule bool, variations map[string]*interface{}) error {
 	if !defaultRule && r.IsDisable() {
 		return nil
 	}
@@ -223,39 +270,101 @@ func (r *Rule) IsValid(defaultRule bool) error {
 	}
 
 	// targeting without query
-	if !defaultRule && r.Query == nil {
-		return fmt.Errorf("each targeting should have a query")
+	if err := r.isQueryValid(defaultRule); err != nil {
+		return err
 	}
 
 	// Validate the percentage of the rule
 	if r.Percentages != nil {
 		count := float64(0)
-		for _, p := range r.GetPercentages() {
+		for k, p := range r.GetPercentages() {
 			count += p
+			if _, ok := variations[k]; !ok {
+				return fmt.Errorf("invalid percentage: variation %s does not exist", k)
+			}
 		}
 
-		if count != 100 {
-			return fmt.Errorf("invalid percentages")
+		if len(r.GetPercentages()) == 0 {
+			return fmt.Errorf("invalid percentages: should not be empty")
+		}
+
+		if count == 0 {
+			return fmt.Errorf("invalid percentages: should not be equal to 0")
 		}
 	}
 
 	// Progressive rollout: check that initial is lower than end
-	if r.ProgressiveRollout != nil &&
-		(r.GetProgressiveRollout().End.getPercentage() < r.GetProgressiveRollout().Initial.getPercentage()) {
-		return fmt.Errorf("invalid progressive rollout, initial percentage should be lower "+
-			"than end percentage: %v/%v",
-			r.GetProgressiveRollout().Initial.getPercentage(), r.GetProgressiveRollout().End.getPercentage())
+	if r.ProgressiveRollout != nil {
+		if r.GetProgressiveRollout().End.getPercentage() < r.GetProgressiveRollout().Initial.getPercentage() {
+			return fmt.Errorf("invalid progressive rollout, initial percentage should be lower "+
+				"than end percentage: %v/%v",
+				r.GetProgressiveRollout().Initial.getPercentage(), r.GetProgressiveRollout().End.getPercentage())
+		}
+
+		endVar := r.GetProgressiveRollout().End.getVariation()
+		if _, ok := variations[endVar]; !ok {
+			return fmt.Errorf("invalid progressive rollout, end variation %s does not exist", endVar)
+		}
+
+		initialVar := r.GetProgressiveRollout().Initial.getVariation()
+		if _, ok := variations[initialVar]; !ok {
+			return fmt.Errorf("invalid progressive rollout, initial variation %s does not exist", initialVar)
+		}
+	}
+
+	// Check that the variation exists
+	if r.Percentages == nil && r.ProgressiveRollout == nil && r.VariationResult != nil {
+		if _, ok := variations[r.GetVariationResult()]; !ok {
+			return fmt.Errorf("invalid variation: %s does not exist", r.GetVariationResult())
+		}
+	}
+	return nil
+}
+
+func (r *Rule) isQueryValid(defaultRule bool) error {
+	if defaultRule {
+		return nil
+	}
+
+	if r.Query == nil {
+		return fmt.Errorf("each targeting should have a query")
+	}
+
+	// Validate the query with the parser
+	switch r.GetQueryFormat() {
+	case JSONLogicQueryFormat:
+		if !jsonlogic.IsValid(strings.NewReader(r.GetTrimmedQuery())) {
+			return fmt.Errorf("invalid jsonlogic query: %s", r.GetTrimmedQuery())
+		}
+		return nil
+	default:
+		return validateNikunjyQuery(r.GetTrimmedQuery())
+	}
+}
+
+func validateNikunjyQuery(query string) error {
+	ev, err := parser.NewEvaluator(query)
+	if err != nil {
+		return err
+	}
+	_, err = ev.Process(map[string]interface{}{})
+	if err != nil {
+		return fmt.Errorf("invalid query: %w", err)
 	}
 	return nil
 }
 
 // GetTrimmedQuery is removing the break lines and return
 func (r *Rule) GetTrimmedQuery() string {
-	splitQuery := strings.Split(r.GetQuery(), "\n")
-	for index, item := range splitQuery {
-		splitQuery[index] = strings.TrimLeft(item, " ")
+	return utils.StrTrim(r.GetQuery())
+}
+
+// GetQueryFormat is returning the format used for the query
+func (r *Rule) GetQueryFormat() QueryFormat {
+	if utils.IsJSONObject(r.GetTrimmedQuery()) {
+		return JSONLogicQueryFormat
 	}
-	return strings.Join(splitQuery, "")
+	return NikunjyQueryFormat
 }
 
 func (r *Rule) GetQuery() string {

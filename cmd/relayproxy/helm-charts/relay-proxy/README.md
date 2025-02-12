@@ -1,6 +1,6 @@
 # relay-proxy
 
-![Version: 1.18.0](https://img.shields.io/badge/Version-1.18.0-informational?style=flat-square) ![Type: application](https://img.shields.io/badge/Type-application-informational?style=flat-square) ![AppVersion: v1.18.0](https://img.shields.io/badge/AppVersion-v1.18.0-informational?style=flat-square)
+![Version: 1.41.1](https://img.shields.io/badge/Version-1.41.1-informational?style=flat-square) ![Type: application](https://img.shields.io/badge/Type-application-informational?style=flat-square) ![AppVersion: v1.41.1](https://img.shields.io/badge/AppVersion-v1.41.1-informational?style=flat-square)
 
 A Helm chart to deploy go-feature-flag-relay proxy into Kubernetes
 
@@ -192,6 +192,24 @@ object
 			</td>
 		</tr>
 		<tr>
+			<td id="extraManifests">
+				<a href="./values.yaml#L125">extraManifests</a>
+            </td>
+			<td>
+list
+</td>
+			<td>
+				<div style="max-width: 300px;">
+<pre lang="json">
+[]
+</pre>
+</div>
+			</td>
+			<td>
+				Array of extra objects to deploy with the release (evaluated as a template)
+			</td>
+		</tr>
+		<tr>
 			<td id="fullnameOverride">
 				<a href="./values.yaml#L42">fullnameOverride</a>
             </td>
@@ -237,7 +255,7 @@ string
 			<td>
 				<div style="max-width: 300px;">
 <pre lang="json">
-"thomaspoignant/go-feature-flag"
+"gofeatureflag/go-feature-flag"
 </pre>
 </div>
 			</td>
@@ -443,29 +461,20 @@ object
 		</tr>
 		<tr>
 			<td id="relayproxy--config">
-				<a href="./values.yaml#L4">relayproxy.config</a>
+				<a href="./values.yaml#L3">relayproxy.config</a>
             </td>
 			<td>
-tpl/object
+string
 </td>
 			<td>
 				<div style="max-width: 300px;">
-<pre lang="tpl">
-relayproxy.config: |
-  listen: 1031
-  pollingInterval: 1000
-  startWithRetrieverError: false
-  retriever:
-    kind: http
-    url: https://raw.githubusercontent.com/thomaspoignant/go-feature-flag/main/examples/retriever_file/flags.goff.yaml
-  exporter:
-    kind: log
- 
+<pre lang="json">
+"listen: 1031\npollingInterval: 1000\nstartWithRetrieverError: false\nlogLevel: info\nretriever:\n  kind: http\n  url: https://raw.githubusercontent.com/thomaspoignant/go-feature-flag/main/examples/retriever_file/flags.goff.yaml\nexporter:\n  kind: log\n"
 </pre>
 </div>
 			</td>
 			<td>
-				Define this for extra Django environment variables
+				GO Feature Flag relay proxy configuration as string (accept template).
 			</td>
 		</tr>
 		<tr>

@@ -14,19 +14,19 @@ RESET  := $(shell tput -Txterm sgr0)
 
 all: help
 ## Build:
-build: build-migrationcli build-relayproxy build-lint build-editor-api build-jsonschema-generator ## Build all the binaries and put the output in out/bin/
+build: build-relayproxy build-lint build-editor-api build-jsonschema-generator build-cli ## Build all the binaries and put the output in out/bin/
 
 create-out-dir:
 	mkdir -p out/bin
-
-build-migrationcli: create-out-dir ## Build the migration cli in out/bin/
-	CGO_ENABLED=0 GO111MODULE=on $(GOCMD) build -mod vendor -o out/bin/migrationcli ./cmd/migrationcli/
 
 build-relayproxy: create-out-dir ## Build the relay proxy in out/bin/
 	CGO_ENABLED=0 GO111MODULE=on $(GOCMD) build -mod vendor -o out/bin/relayproxy ./cmd/relayproxy/
 
 build-lint: create-out-dir ## Build the linter in out/bin/
 	CGO_ENABLED=0 GO111MODULE=on $(GOCMD) build -mod vendor -o out/bin/lint ./cmd/lint/
+
+build-cli: create-out-dir ## Build the linter in out/bin/
+	CGO_ENABLED=0 GO111MODULE=on $(GOCMD) build -mod vendor -o out/bin/cli ./cmd/cli/
 
 build-editor-api: create-out-dir ## Build the linter in out/bin/
 	CGO_ENABLED=0 GO111MODULE=on $(GOCMD) build -mod vendor -o out/bin/editor-api ./cmd/editor/
@@ -73,23 +73,23 @@ generate-helm-docs: ## Generates helm documentation for the project
 
 ## Test:
 test: ## Run the tests of the project
-	$(GOTEST) -v -race ./...
+	$(GOTEST) -v -race ./... -tags=docker
 
 provider-tests: ## Run the integration tests for the Open Feature Providers
 	./openfeature/provider_tests/integration_tests.sh
 
 coverage: ## Run the tests of the project and export the coverage
-	$(GOTEST) -cover -covermode=count -coverprofile=coverage.cov.tmp ./... \
+	$(GOTEST) -cover -covermode=count -tags=docker -coverprofile=coverage.cov.tmp ./... \
 	&& cat coverage.cov.tmp | grep -v "/examples/" > coverage.cov
 
 bench: ## Launch the benchmark test
-	 $(GOTEST) -bench Benchmark -cpu 2 -run=^$$
+	 $(GOTEST) -tags=bench -bench Benchmark -cpu 2 -run=^$$
 
 ## Lint:
 lint: ## Use golintci-lint on your project
 	mkdir -p ./bin
 	curl -sSfL https://raw.githubusercontent.com/golangci/golangci-lint/master/install.sh | sh -s latest # Install linters
-	./bin/golangci-lint run --deadline=5m --timeout=5m ./... # Run linters
+	./bin/golangci-lint run --timeout=5m --timeout=5m ./... # Run linters
 
 ## Help:
 help: ## Show this help.

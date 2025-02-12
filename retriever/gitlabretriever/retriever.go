@@ -5,11 +5,11 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
+	"strings"
 	"time"
 
-	httpretriever "github.com/thomaspoignant/go-feature-flag/retriever/httpretriever"
-
 	"github.com/thomaspoignant/go-feature-flag/internal"
+	httpretriever "github.com/thomaspoignant/go-feature-flag/retriever/httpretriever"
 )
 
 // Retriever is a configuration struct for a GitHub retriever.
@@ -52,22 +52,17 @@ func (r *Retriever) Retrieve(ctx context.Context) ([]byte, error) {
 		r.BaseURL = "https://gitlab.com"
 	}
 
-	parsedURL, err := url.Parse(r.BaseURL)
-	if err != nil {
-		return nil, fmt.Errorf("impossible to parse the param baseUrl %s", err)
-	}
-	parsedURL.Path, err = url.JoinPath(
-		parsedURL.Path,
-		"api/v4/projects",
+	path := strings.Join([]string{
+		r.BaseURL, "api/v4/projects",
 		url.QueryEscape(r.RepositorySlug),
 		"repository/files",
-		url.QueryEscape(r.FilePath),
-	)
+		url.QueryEscape(r.FilePath), "raw"}, "/")
+
+	parsedURL, err := url.Parse(path)
 	if err != nil {
-		return nil, fmt.Errorf("impossible to parse the param baseUrl %s", err)
+		return nil, fmt.Errorf("impossible to parse the url %s", err)
 	}
 
-	// add branch as
 	rawQuery := parsedURL.Query()
 	rawQuery.Set("ref", branch)
 	parsedURL.RawQuery = rawQuery.Encode()

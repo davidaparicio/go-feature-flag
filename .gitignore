@@ -27,7 +27,6 @@ vendor/
 
 # binaries
 release/
-cmd/migrationcli/migrationcli
 cmd/relayproxy/relayproxy
 tmp/
 
@@ -42,3 +41,8 @@ go-feature-flag-relay-proxy/
 
 node_modules/
 oryxBuildBinary
+
+./.sonarlint
+
+# Localstack cache
+volume

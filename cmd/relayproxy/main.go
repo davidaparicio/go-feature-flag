@@ -1,17 +1,19 @@
 package main
 
 import (
+	"context"
 	"fmt"
-	"github.com/thomaspoignant/go-feature-flag/cmd/relayproxy/metric"
-	"github.com/thomaspoignant/go-feature-flag/notifier"
 	"os"
+	"time"
 
 	"github.com/spf13/pflag"
 	"github.com/thomaspoignant/go-feature-flag/cmd/relayproxy/api"
 	"github.com/thomaspoignant/go-feature-flag/cmd/relayproxy/config"
 	"github.com/thomaspoignant/go-feature-flag/cmd/relayproxy/docs"
 	"github.com/thomaspoignant/go-feature-flag/cmd/relayproxy/log"
+	"github.com/thomaspoignant/go-feature-flag/cmd/relayproxy/metric"
 	"github.com/thomaspoignant/go-feature-flag/cmd/relayproxy/service"
+	"github.com/thomaspoignant/go-feature-flag/notifier"
 	"go.uber.org/zap"
 )
 
@@ -24,7 +26,7 @@ const banner = `█▀▀ █▀█   █▀▀ █▀▀ ▄▀█ 
      █▀█ █▀▀ █   ▄▀█ █▄█   █▀█ █▀█ █▀█ ▀▄▀ █▄█
      █▀▄ ██▄ █▄▄ █▀█  █    █▀▀ █▀▄ █▄█ █ █  █ 
 
-GO Feature Flag Relay Proxy
+GO Feature Flag Relay Proxy - Version %s
 _____________________________________________`
 
 // @title GO Feature Flag relay proxy endpoints
@@ -47,22 +49,25 @@ func main() {
 	_ = f.Parse(os.Args[1:])
 
 	// Init logger
-	zapLog := log.InitLogger()
-	defer func() { _ = zapLog.Sync() }()
+	logger := log.InitLogger()
+	defer func() { _ = logger.ZapLogger.Sync() }()
 
 	// Loading the configuration in viper
-	proxyConf, err := config.New(f, zapLog, version)
+	proxyConf, err := config.New(f, logger.ZapLogger, version)
 	if err != nil {
-		zapLog.Fatal("error while reading configuration", zap.Error(err))
+		logger.ZapLogger.Fatal("error while reading configuration", zap.Error(err))
 	}
 
 	if err := proxyConf.IsValid(); err != nil {
-		zapLog.Fatal("configuration error", zap.Error(err))
+		logger.ZapLogger.Fatal("configuration error", zap.Error(err))
 	}
 
 	if !proxyConf.HideBanner {
-		fmt.Println(banner)
+		fmt.Printf(banner+"\n", version)
 	}
+
+	// Update the logger's format and level from the config
+	logger.Update(proxyConf.LogFormat, proxyConf.ZapLogLevel())
 
 	// Init swagger
 	docs.SwaggerInfo.Version = proxyConf.Version
@@ -71,13 +76,13 @@ func main() {
 	// Init services
 	metricsV2, err := metric.NewMetrics()
 	if err != nil {
-		zapLog.Error("impossible to initialize prometheus metrics", zap.Error(err))
+		logger.ZapLogger.Error("impossible to initialize prometheus metrics", zap.Error(err))
 	}
 	wsService := service.NewWebsocketService()
 	defer wsService.Close() // close all the open connections
 	prometheusNotifier := metric.NewPrometheusNotifier(metricsV2)
 	proxyNotifier := service.NewNotifierWebsocket(wsService)
-	goff, err := service.NewGoFeatureFlagClient(proxyConf, zapLog, []notifier.Notifier{
+	goff, err := service.NewGoFeatureFlagClient(proxyConf, logger.ZapLogger, []notifier.Notifier{
 		prometheusNotifier,
 		proxyNotifier,
 	})
@@ -92,12 +97,16 @@ func main() {
 		Metrics:              metricsV2,
 	}
 	// Init API server
-	apiServer := api.New(proxyConf, services, zapLog)
+	apiServer := api.New(proxyConf, services, logger.ZapLogger)
 
 	if proxyConf.StartAsAwsLambda {
 		apiServer.StartAwsLambda()
 	} else {
+		defer func() {
+			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			defer cancel()
+			apiServer.Stop(ctx)
+		}()
 		apiServer.Start()
-		defer func() { _ = apiServer.Stop }()
 	}
 }

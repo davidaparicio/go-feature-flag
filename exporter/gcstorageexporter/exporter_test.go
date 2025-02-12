@@ -3,17 +3,17 @@ package gcstorageexporter_test
 import (
 	"context"
 	"crypto/tls"
-	"log"
+	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"testing"
 
-	"github.com/thomaspoignant/go-feature-flag/exporter/gcstorageexporter"
-
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/stretchr/testify/assert"
 	"github.com/thomaspoignant/go-feature-flag/exporter"
+	"github.com/thomaspoignant/go-feature-flag/exporter/gcstorageexporter"
+	"github.com/thomaspoignant/go-feature-flag/utils/fflog"
 	"google.golang.org/api/option"
 )
 
@@ -176,7 +176,7 @@ func TestGoogleStorage_Export(t *testing.T) {
 				},
 			}
 
-			// init Exporter
+			// init DeprecatedExporter
 			f := gcstorageexporter.Exporter{
 				Bucket: tt.fields.Bucket,
 				Options: []option.ClientOption{
@@ -190,7 +190,7 @@ func TestGoogleStorage_Export(t *testing.T) {
 				CsvTemplate: tt.fields.CsvTemplate,
 			}
 
-			err := f.Export(context.Background(), log.New(os.Stdout, "", 0), tt.events)
+			err := f.Export(context.Background(), &fflog.FFLogger{LeveledLogger: slog.Default()}, tt.events)
 			if tt.wantErr {
 				assert.Error(t, err, "Export should error")
 				return
@@ -219,5 +219,5 @@ func (g *GoogleCloudStorageHandler) handler() http.Handler {
 
 func TestGoogleCloudStorage_IsBulk(t *testing.T) {
 	exporter := gcstorageexporter.Exporter{}
-	assert.True(t, exporter.IsBulk(), "S3 exporter is not a bulk exporter")
+	assert.True(t, exporter.IsBulk(), "exporter is a bulk exporter")
 }

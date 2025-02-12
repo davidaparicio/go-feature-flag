@@ -2,10 +2,13 @@ package exporter
 
 import (
 	"context"
-	"github.com/thomaspoignant/go-feature-flag/utils/fflog"
+	"fmt"
 	"log"
+	"log/slog"
 	"sync"
 	"time"
+
+	"github.com/thomaspoignant/go-feature-flag/utils/fflog"
 )
 
 const (
@@ -13,9 +16,9 @@ const (
 	defaultMaxEventInMemory = int64(100000)
 )
 
-// NewScheduler allows to create a new instance of Scheduler ready to be used to export data.
+// NewScheduler allows creating a new instance of Scheduler ready to be used to export data.
 func NewScheduler(ctx context.Context, flushInterval time.Duration, maxEventInMemory int64,
-	exp Exporter, logger *log.Logger,
+	exp CommonExporter, logger *fflog.FFLogger,
 ) *Scheduler {
 	if ctx == nil {
 		ctx = context.Background()
@@ -48,24 +51,24 @@ type Scheduler struct {
 	daemonChan      chan struct{}
 	ticker          *time.Ticker
 	maxEventInCache int64
-	exporter        Exporter
-	logger          *log.Logger
+	exporter        CommonExporter
+	logger          *fflog.FFLogger
 	ctx             context.Context
 }
 
-// AddEvent allow to add an event to the local cache and to call the exporter if we reach
+// AddEvent allow adding an event to the local cache and to call the exporter if we reach
 // the maximum number of events that can be present in the cache.
 func (dc *Scheduler) AddEvent(event FeatureEvent) {
-	dc.mutex.Lock()
-	defer dc.mutex.Unlock()
-
 	if !dc.exporter.IsBulk() {
-		// if we are not in bulk we are directly flushing the data
-		dc.localCache = append(dc.localCache, event)
-		dc.flush()
+		err := sendEvents(dc.ctx, dc.exporter, dc.logger, []FeatureEvent{event})
+		if err != nil {
+			dc.logger.Error(err.Error())
+		}
 		return
 	}
 
+	dc.mutex.Lock()
+	defer dc.mutex.Unlock()
 	if int64(len(dc.localCache)) >= dc.maxEventInCache {
 		dc.flush()
 	}
@@ -101,16 +104,52 @@ func (dc *Scheduler) Close() {
 	dc.mutex.Unlock()
 }
 
-// flush will call the data exporter and clear the cache
-// this method should be always called with a mutex
-func (dc *Scheduler) flush() {
-	if len(dc.localCache) > 0 {
-		err := dc.exporter.Export(dc.ctx, dc.logger, dc.localCache)
-		if err != nil {
-			fflog.Printf(dc.logger, "error while exporting data: %v\n", err)
-			return
-		}
+// GetLogger will return the logger used by the scheduler
+func (dc *Scheduler) GetLogger(level slog.Level) *log.Logger {
+	if dc.logger == nil {
+		return nil
 	}
-	// Clear the cache
+	return dc.logger.GetLogLogger(level)
+}
+
+// flush will call the data exporter and clear the cache
+func (dc *Scheduler) flush() {
+	err := sendEvents(dc.ctx, dc.exporter, dc.logger, dc.localCache)
+	if err != nil {
+		dc.logger.Error(err.Error())
+		return
+	}
 	dc.localCache = make([]FeatureEvent, 0)
+}
+
+func sendEvents(ctx context.Context, exporter CommonExporter, logger *fflog.FFLogger, events []FeatureEvent) error {
+	if len(events) == 0 {
+		return nil
+	}
+
+	switch exp := exporter.(type) {
+	case DeprecatedExporter:
+		var legacyLogger *log.Logger
+		if logger != nil {
+			legacyLogger = logger.GetLogLogger(slog.LevelError)
+		}
+		// use dc exporter as a DeprecatedExporter
+		err := exp.Export(ctx, legacyLogger, events)
+		slog.Warn("You are using an exporter with the old logger."+
+			"Please update your custom exporter to comply to the new Exporter interface.",
+			slog.Any("err", err))
+		if err != nil {
+			return fmt.Errorf("error while exporting data: %w", err)
+		}
+		break
+	case Exporter:
+		err := exp.Export(ctx, logger, events)
+		if err != nil {
+			return fmt.Errorf("error while exporting data: %w", err)
+		}
+		break
+	default:
+		return fmt.Errorf("this is not a valid exporter")
+	}
+	return nil
 }

@@ -16,7 +16,7 @@ To be compatible with Open Feature, **GO Feature Flag** is providing a lightweig
 When the **relay proxy** is running in your infrastructure, you can use the **Open Feature SDKs** in combination with **GO Feature Flag providers** to evaluate your flags. 
 
 This schema is an overview on how **Open Feature** is working, you can have more information about all the concepts in the **[Open Feature documentation](https://docs.openfeature.dev)**.
-![](/docs/openfeature/concepts.jpg)
+![](/docs/openfeature/concepts.png)
 
 ## Create a feature flag configuration
 
@@ -75,7 +75,7 @@ _In this example we are using the javascript SDK, but it is still relevant for a
 ### Install dependencies
 
 ```shell
-npm i @openfeature/js-sdk @openfeature/go-feature-flag-provider
+npm i @openfeature/server-sdk @openfeature/go-feature-flag-provider
 ```
 
 ### Init your Open Feature client
@@ -83,7 +83,7 @@ npm i @openfeature/js-sdk @openfeature/go-feature-flag-provider
 In your app initialization your have to create a client using the Open Feature SDK and initialize it.
 
 ```javascript
-const {OpenFeature} = require("@openfeature/js-sdk");
+const {OpenFeature} = require("@openfeature/server-sdk");
 const {GoFeatureFlagProvider} = require("@openfeature/go-feature-flag-provider");
 
 

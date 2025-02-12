@@ -8,10 +8,12 @@ On this page, we will highlight the various utilization methods, aiming to assis
 ## Complete demo
 - [**demo**](./demo) - A GO application serving a webpage using GO Feature Flag module and demonstrating how you can manage multiple users in the same application.
 
-## Use GO Feature Flag with Openfeature
-- [**Use GO Feature Flag in your browser**](./openfeature_web) - Use GO Feature Flag with Openfeature in your browser.
-- [**Use GO Feature Flag with Node.js**](./openfeature_nodejs) - A simple application using GO Feature Flag with Openfeature in Node.js.
-- [**Use GO Feature Flag with Kotlin**](./openfeature_kotlin) - A simple application using GO Feature Flag with Openfeature in Kotlin.
+## Use GO Feature Flag with OpenFeature
+- [**Use GO Feature Flag in your browser**](./openfeature_web) - Use GO Feature Flag with OpenFeature in your browser.
+- [**Use GO Feature Flag with react**](./openfeature_react) - Use GO Feature Flag with OpenFeature in your React application.
+- [**Use GO Feature Flag with Node.js**](./openfeature_nodejs) - A simple application using GO Feature Flag with OpenFeature in Node.js.
+- [**Use GO Feature Flag with Kotlin in the Server**](./openfeature_kotlin_server) - A simple application using GO Feature Flag with OpenFeature in Kotlin.
+- [**Use GO Feature Flag in your iOS app**](./openfeature_kotlin_server) - A simple iOS app using GO Feature Flag with OpenFeature in Swift.
 
 ## Use GO Feature Flag server
 - [**Deploy GO Feature Flag as an AWS Lambda**](./rollout_experimentation) - An example configuration on how to run GO Feature Flag as a serverless application using AWS Lambda.
@@ -20,7 +22,9 @@ On this page, we will highlight the various utilization methods, aiming to assis
 - [**Retrieve config from Kubernetes**](./retriever_configmap) - A small set up with a test application that explain how to retrieve your configuration from a **configMap** in Kubernetes.
 - [**Retrieve config from a file**](./retriever_file) - A code snippet to see how to retrieve your configuration from a local file.
 - [**Retrieve config from GitHub**](./retriever_file) - A code snippet to see how to retrieve your configuration from GitHub.
+- [**Retrieve config from AWS S3**](./retriever_file) - A code snippet to see how to retrieve your configuration from AWS S3.
 - [**Retrieve config from an HTTP endpoint**](./retriever_file) - A code snippet to see how to retrieve your configuration from any HTTP endpoint.
+- [**Retrieve config from MongoDB**](./retriever_mongodb) - A small set up with a test application that explain how to retrieve your configuration from a **MongoDB** database.
 - [**Use multiple configuration file**](./retriever_file) - A code snippet to see how to use multiple configuration file.
 - [**Export data to a file**](./data_export_file) - A code snippet to see how to export the usage of your flags in a file.
 - [**Export data to AWS S3**](./data_export_s3) - A code snippet to see how to export the usage of your flags in AWS S3.

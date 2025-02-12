@@ -13,10 +13,9 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
         with:
-          fetch-depth: 0
-          ref: ${{ github.ref }}
+          fetch-depth: 1
       - name: Setup go
-        uses: actions/setup-go@v4
+        uses: actions/setup-go@v5
         with:
           go-version-file: go.mod
           check-latest: true
@@ -28,10 +27,9 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
         with:
-          fetch-depth: 0
-          ref: ${{ github.ref }}
+          fetch-depth: 1
       - name: Setup go
-        uses: actions/setup-go@v4
+        uses: actions/setup-go@v5
         with:
           go-version-file: go.mod
           check-latest: true
@@ -43,10 +41,9 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
         with:
-          fetch-depth: 0
-          ref: ${{ github.ref }}
+          fetch-depth: 1
       - name: Setup go
-        uses: actions/setup-go@v4
+        uses: actions/setup-go@v5
         with:
           go-version-file: go.mod
           check-latest: true
@@ -58,19 +55,20 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
         with:
-          fetch-depth: 0
-          ref: ${{ github.ref }}
+          fetch-depth: 1
       - name: Setup go
-        uses: actions/setup-go@v4
+        uses: actions/setup-go@v5
         with:
           go-version-file: go.mod
           check-latest: true
       - run: make coverage
       - name: Upload coverage reports to Codecov
-        uses: codecov/codecov-action@v3
+        uses: codecov/codecov-action@v5
         with:
-          token: ${{ secrets.CODECOV_TOKEN }}
           fail_ci_if_error: true
+          token: ${{ secrets.CODECOV_TOKEN }}
+        env:
+          CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
 
   swagger-change:
     name: Swagger Change
@@ -78,8 +76,10 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
       - name: Setup go
-        uses: actions/setup-go@v4
+        uses: actions/setup-go@v5
         with:
           go-version-file: go.mod
           check-latest: true
@@ -92,20 +92,20 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
         with:
-          fetch-depth: 0
+          fetch-depth: 1
 
       - name: Setup go
-        uses: actions/setup-go@v4
+        uses: actions/setup-go@v5
         with:
           go-version-file: go.mod
           check-latest: true
 
-      - name: Run GoReleaser
-        uses: goreleaser/goreleaser-action@v5
+      - name: Run GoReleaser .goreleaser.yaml check
+        uses: goreleaser/goreleaser-action@v6
         with:
           distribution: goreleaser
           version: latest
-          args: check
+          args: check --config .goreleaser.yaml
 
   integration-tests:
     name: Integration Tests
@@ -113,21 +113,25 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
       - name: Setup go
-        uses: actions/setup-go@v4
+        uses: actions/setup-go@v5
         with:
           go-version-file: go.mod
           check-latest: true
       - name: Set up Maven
-        uses: stCarolas/setup-maven@v4.5
+        uses: stCarolas/setup-maven@v5
         with:
           maven-version: 3.8.2
       - uses: actions/setup-node@v4
         with:
           node-version: 16
-      - uses: actions/setup-dotnet@v3
+      - name: Install ICU packages
+        run: sudo apt-get update && sudo apt-get install -y libicu-dev
+      - uses: actions/setup-dotnet@v4
         with:
-          dotnet-version: '3.1.x'
+          dotnet-version: '7.0.x'
       - run: make provider-tests
 
   Benchmark:
@@ -137,17 +141,16 @@ jobs:
       - name: checkout
         uses: actions/checkout@v4
         with:
-          fetch-depth: 0
-          ref: ${{ github.ref }}
+          fetch-depth: 1
       - name: Setup go
-        uses: actions/setup-go@v4
+        uses: actions/setup-go@v5
         with:
           go-version-file: go.mod
           check-latest: true
       - name: Run benchmark
         run: make bench | tee bench-output.txt
       - name: Download previous benchmark data
-        uses: actions/cache@v3
+        uses: actions/cache@v4
         with:
           path: ./cache
           key: ${{ runner.os }}-benchmark
@@ -161,3 +164,33 @@ jobs:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           comment-on-alert: true
           alert-comment-cc-users: "@$GITHUB_ACTOR"
+
+  Python-provider:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+      - name: Get changed files in the docs folder
+        id: changed-files-specific
+        uses: tj-actions/changed-files@v45
+        with:
+          files: ./openfeature/providers/python-provider/**
+      - uses: actions/setup-python@v5
+        with:
+          python-version: 3.9
+      - name: Setup Poetry
+        if: steps.changed-files-specific.outputs.any_changed == 'true'
+        uses: abatilo/actions-poetry@v4
+      - name: Poetry install
+        if: steps.changed-files-specific.outputs.any_changed == 'true'
+        working-directory: ./openfeature/providers/python-provider
+        run: poetry install
+      - name: lint black
+        if: steps.changed-files-specific.outputs.any_changed == 'true'
+        working-directory: ./openfeature/providers/python-provider
+        run: poetry run black . --check
+      - name: Pytest
+        if: steps.changed-files-specific.outputs.any_changed == 'true'
+        working-directory: ./openfeature/providers/python-provider
+        run: poetry run pytest

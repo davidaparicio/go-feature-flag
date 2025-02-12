@@ -1,12 +1,13 @@
 package controller
 
 import (
+	"net/http"
+	"time"
+
 	"github.com/gorilla/websocket"
 	"github.com/labstack/echo/v4"
 	"github.com/thomaspoignant/go-feature-flag/cmd/relayproxy/service"
 	"go.uber.org/zap"
-	"net/http"
-	"time"
 )
 
 // NewWsFlagChange is the constructor to create a new controller to handle websocket
@@ -15,7 +16,7 @@ func NewWsFlagChange(websocketService service.WebsocketService, logger *zap.Logg
 	return &wsFlagChange{
 		websocketService: websocketService,
 		upgrader: websocket.Upgrader{
-			CheckOrigin: func(r *http.Request) bool {
+			CheckOrigin: func(_ *http.Request) bool {
 				return true
 			},
 		},
@@ -32,6 +33,7 @@ type wsFlagChange struct {
 
 // Handler is the entry point for the websocket endpoint to get notified when a flag has been edited
 // @Summary      Websocket endpoint to be notified about flag changes
+// @Tags GO Feature Flag Evaluation Websocket API
 // @Description  This endpoint is a websocket endpoint to be notified about flag changes, every change
 // @Description  will send a request to the client with a model.DiffCache format.
 // @Description

@@ -9,6 +9,8 @@ type Context interface {
 	GetCustom() map[string]interface{}
 	// AddCustomAttribute allows to add a custom attribute into the context.
 	AddCustomAttribute(name string, value interface{})
+	// ExtractGOFFProtectedFields extract the goff specific attributes from the evaluation context.
+	ExtractGOFFProtectedFields() GoffContextSpecifics
 }
 
 // value is a type to define custom attribute.
@@ -70,4 +72,22 @@ func (u EvaluationContext) AddCustomAttribute(name string, value interface{}) {
 	if name != "" {
 		u.custom[name] = value
 	}
+}
+
+// ExtractGOFFProtectedFields extract the goff specific attributes from the evaluation context.
+func (u EvaluationContext) ExtractGOFFProtectedFields() GoffContextSpecifics {
+	goff := GoffContextSpecifics{}
+	switch v := u.custom["gofeatureflag"].(type) {
+	case map[string]string:
+		goff.addCurrentDateTime(v["currentDateTime"])
+		goff.addListFlags(v["flagList"])
+		goff.addExporterMetadata(v["exporterMetadata"])
+	case map[string]interface{}:
+		goff.addCurrentDateTime(v["currentDateTime"])
+		goff.addListFlags(v["flagList"])
+		goff.addExporterMetadata(v["exporterMetadata"])
+	case GoffContextSpecifics:
+		return v
+	}
+	return goff
 }

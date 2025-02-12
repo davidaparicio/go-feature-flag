@@ -18,11 +18,71 @@
     },
     "basePath": "/",
     "paths": {
+        "/admin/v1/retriever/refresh": {
+            "post": {
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ],
+                "description": "This endpoint is used to force the refresh of the flags in the cache.\nThis endpoint is used when you know explicitly that a flag has changed, and you want to trigger\nthe collection of the new versions.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Admin API to manage GO Feature Flag"
+                ],
+                "summary": "This endpoint is used to force the refresh of the flags in the cache.",
+                "responses": {
+                    "200": {
+                        "description": "Success",
+                        "schema": {
+                            "$ref": "#/definitions/controller.retrieverRefreshResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/modeldocs.HTTPErrorDoc"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal server error",
+                        "schema": {
+                            "$ref": "#/definitions/modeldocs.HTTPErrorDoc"
+                        }
+                    }
+                }
+            }
+        },
+        "/debug/pprof/": {
+            "get": {
+                "description": "This endpoint is provided by the echo pprof middleware.\nTo know more please check this blogpost from the GO team https://go.dev/blog/pprof.\nVisit the page /debug/pprof/ to see the available endpoints, all endpoint are not in the swagger documentation because they are standard pprof endpoints.\nThis endpoint is only available in debug mode.",
+                "produces": [
+                    "text/plain"
+                ],
+                "tags": [
+                    "Profiling"
+                ],
+                "summary": "pprof endpoint",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                }
+            }
+        },
         "/health": {
             "get": {
                 "description": "Making a **GET** request to the URL path `/health` will tell you if the relay proxy is ready to serve\ntraffic.\n\nThis is useful especially for loadbalancer to know that they can send traffic to the service.",
                 "produces": [
                     "application/json"
+                ],
+                "tags": [
+                    "Monitoring"
                 ],
                 "summary": "Health",
                 "responses": {
@@ -41,6 +101,9 @@
                 "produces": [
                     "application/json"
                 ],
+                "tags": [
+                    "Monitoring"
+                ],
                 "summary": "Info",
                 "responses": {
                     "200": {
@@ -58,12 +121,220 @@
                 "produces": [
                     "text/plain"
                 ],
+                "tags": [
+                    "Monitoring"
+                ],
                 "summary": "Prometheus endpoint",
                 "responses": {
                     "200": {
                         "description": "OK",
                         "schema": {
                             "type": "string"
+                        }
+                    }
+                }
+            }
+        },
+        "/ofrep/v1/configuration": {
+            "get": {
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ],
+                "description": "OFREP configuration to provide information about the remote flag management system, to configure the\nOpenFeature SDK providers.\n\nThis endpoint will be called during the initialization of the provider.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "OpenFeature Remote Evaluation Protocol (OFREP)"
+                ],
+                "summary": "OFREP provider configuration",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "The request will be processed only if ETag doesn't match.",
+                        "name": "If-None-Match",
+                        "in": "header"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Success",
+                        "schema": {
+                            "$ref": "#/definitions/model.OFREPConfiguration"
+                        }
+                    },
+                    "304": {
+                        "description": "Etag: \\\"117-0193435c612c50d93b798619d9464856263dbf9f\\",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/modeldocs.HTTPErrorDoc"
+                        }
+                    },
+                    "404": {
+                        "description": "Flag Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/model.OFREPEvaluateErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal server error",
+                        "schema": {
+                            "$ref": "#/definitions/modeldocs.HTTPErrorDoc"
+                        }
+                    }
+                }
+            }
+        },
+        "/ofrep/v1/evaluate/flags": {
+            "post": {
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ],
+                "description": "Making a **POST** request to the URL `/ofrep/v1/evaluate/flags` will give you the value of the list\nof feature flags for this evaluation context.\n\nIf no flags are provided, the API will evaluate all available flags in the configuration.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "OpenFeature Remote Evaluation Protocol (OFREP)"
+                ],
+                "summary": "Open-Feature Remote Evaluation Protocol bulk evaluation API.",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "The request will be processed only if ETag doesn't match.",
+                        "name": "If-None-Match",
+                        "in": "header"
+                    },
+                    {
+                        "description": "Evaluation Context and list of flag for this API call",
+                        "name": "data",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/model.OFREPEvalFlagRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OFREP successful evaluation response",
+                        "schema": {
+                            "$ref": "#/definitions/model.OFREPBulkEvaluateSuccessResponse"
+                        }
+                    },
+                    "304": {
+                        "description": "Etag: \\\"117-0193435c612c50d93b798619d9464856263dbf9f\\",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad evaluation request",
+                        "schema": {
+                            "$ref": "#/definitions/model.OFREPCommonErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized - You need credentials to access the API",
+                        "schema": {
+                            "$ref": "#/definitions/modeldocs.HTTPErrorDoc"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden - You are not authorized to access the API",
+                        "schema": {
+                            "$ref": "#/definitions/modeldocs.HTTPErrorDoc"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal server error",
+                        "schema": {
+                            "$ref": "#/definitions/modeldocs.HTTPErrorDoc"
+                        }
+                    }
+                }
+            }
+        },
+        "/ofrep/v1/evaluate/flags/{flag_key}": {
+            "post": {
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ],
+                "description": "Making a **POST** request to the URL `/ofrep/v1/evaluate/flags/{your_flag_name}` will give you the\nvalue of the flag for this evaluation context\n",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "OpenFeature Remote Evaluation Protocol (OFREP)"
+                ],
+                "summary": "Evaluate a feature flag using the OpenFeature Remote Evaluation Protocol",
+                "parameters": [
+                    {
+                        "description": "Evaluation Context for this API call",
+                        "name": "data",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/model.OFREPEvalFlagRequest"
+                        }
+                    },
+                    {
+                        "type": "string",
+                        "description": "Name of your feature flag",
+                        "name": "flag_key",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Success",
+                        "schema": {
+                            "$ref": "#/definitions/model.OFREPEvaluateSuccessResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/model.OFREPEvaluateErrorResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/modeldocs.HTTPErrorDoc"
+                        }
+                    },
+                    "404": {
+                        "description": "Flag Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/model.OFREPEvaluateErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal server error",
+                        "schema": {
+                            "$ref": "#/definitions/modeldocs.HTTPErrorDoc"
                         }
                     }
                 }
@@ -82,6 +353,9 @@
                 ],
                 "produces": [
                     "application/json"
+                ],
+                "tags": [
+                    "GO Feature Flag Evaluation API"
                 ],
                 "summary": "All flags variations for a user",
                 "parameters": [
@@ -131,6 +405,9 @@
                 "produces": [
                     "application/json"
                 ],
+                "tags": [
+                    "GO Feature Flag Evaluation API"
+                ],
                 "summary": "Endpoint to send usage of your flags to be collected",
                 "parameters": [
                     {
@@ -179,6 +456,9 @@
                 "produces": [
                     "application/json"
                 ],
+                "tags": [
+                    "GO Feature Flag Evaluation API"
+                ],
                 "summary": "Evaluate a feature flag",
                 "parameters": [
                     {
@@ -220,6 +500,54 @@
                 }
             }
         },
+        "/v1/flag/change": {
+            "get": {
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ],
+                "description": "Making a **GET** request to the URL `/v1/flag/change` will give you the hash of the current\nconfiguration, you can use this hash to know if the configuration has changed.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "GO Feature Flag Evaluation API"
+                ],
+                "summary": "Endpoint to poll if you want to know if there is a configuration change in the flags",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "The request will be processed only if ETag doesn't match.",
+                        "name": "If-None-Match",
+                        "in": "header"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Success",
+                        "schema": {
+                            "$ref": "#/definitions/controller.FlagChangeResponse"
+                        }
+                    },
+                    "304": {
+                        "description": "Etag: \\\"117-0193435c612c50d93b798619d9464856263dbf9f\\",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal server error",
+                        "schema": {
+                            "$ref": "#/definitions/modeldocs.HTTPErrorDoc"
+                        }
+                    }
+                }
+            }
+        },
         "/ws/v1/flag/change": {
             "post": {
                 "description": "This endpoint is a websocket endpoint to be notified about flag changes, every change\nwill send a request to the client with a model.DiffCache format.\n",
@@ -228,6 +556,9 @@
                 ],
                 "produces": [
                     "application/json"
+                ],
+                "tags": [
+                    "GO Feature Flag Evaluation Websocket API"
                 ],
                 "summary": "Websocket endpoint to be notified about flag changes",
                 "parameters": [
@@ -262,6 +593,28 @@
         }
     },
     "definitions": {
+        "controller.FlagChangeResponse": {
+            "type": "object",
+            "properties": {
+                "flags": {
+                    "type": "object",
+                    "additionalProperties": {
+                        "type": "integer"
+                    }
+                },
+                "hash": {
+                    "type": "integer"
+                }
+            }
+        },
+        "controller.retrieverRefreshResponse": {
+            "type": "object",
+            "properties": {
+                "refreshed": {
+                    "type": "boolean"
+                }
+            }
+        },
         "exporter.FeatureEvent": {
             "type": "object",
             "properties": {
@@ -290,6 +643,14 @@
                     "type": "string",
                     "example": "feature"
                 },
+                "metadata": {
+                    "description": "Metadata are static information added in the providers to give context about the events generated.",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/exporter.FeatureEventMetadata"
+                        }
+                    ]
+                },
                 "source": {
                     "description": "Source indicates where the event was generated.\nThis is set to SERVER when the event was evaluated in the relay-proxy and PROVIDER_CACHE when it is evaluated from the cache.",
                     "type": "string",
@@ -314,6 +675,33 @@
                     "example": "v1.0.0"
                 }
             }
+        },
+        "exporter.FeatureEventMetadata": {
+            "type": "object",
+            "additionalProperties": true
+        },
+        "flag.ErrorCode": {
+            "type": "string",
+            "enum": [
+                "PROVIDER_NOT_READY",
+                "FLAG_NOT_FOUND",
+                "PARSE_ERROR",
+                "TYPE_MISMATCH",
+                "GENERAL",
+                "INVALID_CONTEXT",
+                "TARGETING_KEY_MISSING",
+                "FLAG_CONFIG"
+            ],
+            "x-enum-varnames": [
+                "ErrorCodeProviderNotReady",
+                "ErrorCodeFlagNotFound",
+                "ErrorCodeParseError",
+                "ErrorCodeTypeMismatch",
+                "ErrorCodeGeneral",
+                "ErrorCodeInvalidContext",
+                "ErrorCodeTargetingKeyMissing",
+                "ErrorFlagConfiguration"
+            ]
         },
         "flag.Flag": {
             "type": "object",
@@ -345,14 +733,6 @@
                             "$ref": "#/definitions/model.EvaluationContextRequest"
                         }
                     ]
-                },
-                "user": {
-                    "description": "Deprecated: User The representation of a user for your feature flag system.",
-                    "allOf": [
-                        {
-                            "$ref": "#/definitions/model.UserRequest"
-                        }
-                    ]
                 }
             }
         },
@@ -368,10 +748,11 @@
                 },
                 "meta": {
                     "description": "Meta are the extra information added during the configuration",
-                    "type": "object",
-                    "additionalProperties": {
-                        "type": "string"
-                    }
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/exporter.FeatureEventMetadata"
+                        }
+                    ]
                 }
             }
         },
@@ -395,14 +776,6 @@
                     "allOf": [
                         {
                             "$ref": "#/definitions/model.EvaluationContextRequest"
-                        }
-                    ]
-                },
-                "user": {
-                    "description": "Deprecated: User The representation of a user for your feature flag system.",
-                    "allOf": [
-                        {
-                            "$ref": "#/definitions/model.UserRequest"
                         }
                     ]
                 }
@@ -451,31 +824,152 @@
                 }
             }
         },
-        "model.UserRequest": {
+        "model.OFREPBulkEvaluateSuccessResponse": {
             "type": "object",
             "properties": {
-                "anonymous": {
-                    "description": "Anonymous set if this is a logged-in user or not.",
-                    "type": "boolean",
-                    "example": false
+                "flags": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/model.OFREPFlagBulkEvaluateSuccessResponse"
+                    }
+                }
+            }
+        },
+        "model.OFREPCommonErrorResponse": {
+            "type": "object",
+            "properties": {
+                "errorCode": {
+                    "$ref": "#/definitions/flag.ErrorCode"
                 },
-                "custom": {
-                    "description": "Custom is a map containing all extra information for this user.",
+                "errorDetails": {
+                    "type": "string"
+                }
+            }
+        },
+        "model.OFREPConfigCapabilities": {
+            "type": "object",
+            "properties": {
+                "cacheInvalidation": {
+                    "$ref": "#/definitions/model.OFREPConfigCapabilitiesCacheInvalidation"
+                },
+                "flagEvaluation": {
+                    "$ref": "#/definitions/model.OFREPConfigCapabilitiesFlagEvaluation"
+                }
+            }
+        },
+        "model.OFREPConfigCapabilitiesCacheInvalidation": {
+            "type": "object",
+            "properties": {
+                "polling": {
+                    "$ref": "#/definitions/model.OFREPConfigCapabilitiesCacheInvalidationPolling"
+                }
+            }
+        },
+        "model.OFREPConfigCapabilitiesCacheInvalidationPolling": {
+            "type": "object",
+            "properties": {
+                "enabled": {
+                    "type": "boolean"
+                },
+                "minPollingInterval": {
+                    "type": "integer"
+                }
+            }
+        },
+        "model.OFREPConfigCapabilitiesFlagEvaluation": {
+            "type": "object",
+            "properties": {
+                "unsupportedTypes": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                }
+            }
+        },
+        "model.OFREPConfiguration": {
+            "type": "object",
+            "properties": {
+                "capabilities": {
+                    "$ref": "#/definitions/model.OFREPConfigCapabilities"
+                },
+                "name": {
+                    "type": "string"
+                }
+            }
+        },
+        "model.OFREPEvalFlagRequest": {
+            "type": "object",
+            "properties": {
+                "context": {
                     "type": "object",
                     "additionalProperties": {
                         "type": "string"
                     },
                     "example": {
                         "company": "GO Feature Flag",
-                        "email": "contact@gofeatureflag.org",
                         "firstname": "John",
-                        "lastname": "Doe"
+                        "lastname": "Doe",
+                        "targetingKey": "4f433951-4c8c-42b3-9f18-8c9a5ed8e9eb"
                     }
+                }
+            }
+        },
+        "model.OFREPEvaluateErrorResponse": {
+            "type": "object",
+            "properties": {
+                "errorCode": {
+                    "$ref": "#/definitions/flag.ErrorCode"
+                },
+                "errorDetails": {
+                    "type": "string"
                 },
                 "key": {
-                    "description": "Key is the identifier of the UserRequest.",
-                    "type": "string",
-                    "example": "08b5ffb7-7109-42f4-a6f2-b85560fbd20f"
+                    "type": "string"
+                }
+            }
+        },
+        "model.OFREPEvaluateSuccessResponse": {
+            "type": "object",
+            "properties": {
+                "key": {
+                    "type": "string"
+                },
+                "metadata": {
+                    "type": "object",
+                    "additionalProperties": {}
+                },
+                "reason": {
+                    "type": "string"
+                },
+                "value": {},
+                "variant": {
+                    "type": "string"
+                }
+            }
+        },
+        "model.OFREPFlagBulkEvaluateSuccessResponse": {
+            "type": "object",
+            "properties": {
+                "errorCode": {
+                    "type": "string"
+                },
+                "errorDetails": {
+                    "type": "string"
+                },
+                "key": {
+                    "type": "string"
+                },
+                "metadata": {
+                    "type": "object",
+                    "additionalProperties": {}
+                },
+                "reason": {
+                    "type": "string"
+                },
+                "value": {},
+                "variant": {
+                    "type": "string"
                 }
             }
         },

@@ -1,15 +1,18 @@
 package main
 
 import (
+	"net/http"
+	"os"
+
+	echoadapter "github.com/awslabs/aws-lambda-go-api-proxy/echo"
 	"github.com/labstack/echo/v4"
 	"github.com/labstack/echo/v4/middleware"
 	custommiddleware "github.com/thomaspoignant/go-feature-flag/cmd/relayproxy/api/middleware"
 	"github.com/thomaspoignant/go-feature-flag/cmd/relayproxy/log"
-	"github.com/thomaspoignant/go-feature-flag/ffcontext"
-	"github.com/thomaspoignant/go-feature-flag/internal/dto"
 	"github.com/thomaspoignant/go-feature-flag/internal/flag"
+	"github.com/thomaspoignant/go-feature-flag/internal/utils"
 	"github.com/thomaspoignant/go-feature-flag/model"
-	"net/http"
+	"github.com/thomaspoignant/go-feature-flag/model/dto"
 )
 
 // This service is an API used to evaluate a flag with an evaluation context
@@ -17,10 +20,11 @@ import (
 // of the flag is working as expected.
 
 func main() {
-	zapLog := log.InitLogger()
-	defer func() { _ = zapLog.Sync() }()
+	logger := log.InitLogger()
+	defer func() { _ = logger.ZapLogger.Sync() }()
+
 	e := echo.New()
-	e.Use(custommiddleware.ZapLogger(zapLog, nil))
+	e.Use(custommiddleware.ZapLogger(logger.ZapLogger, nil))
 	e.Use(middleware.CORSWithConfig(middleware.CORSConfig{
 		AllowOrigins: []string{
 			"http://gofeatureflag.org",
@@ -34,17 +38,13 @@ func main() {
 	g := e.Group("/v1")
 	g.POST("/feature/evaluate", EvaluateHandler)
 	e.GET("/health", HealthHandler)
-	e.Logger.Fatal(e.Start(":1323"))
-}
 
-func (c *ContextWrapper) toEvaluationContext() ffcontext.Context {
-	evalCtx := ffcontext.NewEvaluationContext(c.Key)
-	if c.Custom != nil {
-		for k, v := range c.Custom {
-			evalCtx.AddCustomAttribute(k, v)
-		}
+	if _, exists := os.LookupEnv("RUN_AS_LAMBDA"); exists {
+		adapter := awsLambdaHandler{adapter: echoadapter.NewV2(e)}
+		adapter.Start()
+	} else {
+		e.Logger.Fatal(e.Start(":1323"))
 	}
-	return evalCtx
 }
 
 // EvaluateHandler is the function called when calling the endpoint /v1/feature/evaluate.
@@ -57,7 +57,7 @@ func EvaluateHandler(c echo.Context) error {
 	f := u.Flag.Convert()
 	value, resolutionDetails := f.Value(
 		u.FlagName,
-		u.Context.toEvaluationContext(),
+		utils.ConvertEvaluationCtxFromRequest(u.Context.Key, u.Context.Custom),
 		flag.Context{
 			DefaultSdkValue: nil,
 		},

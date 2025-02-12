@@ -2,13 +2,11 @@ package ffclient
 
 import (
 	"fmt"
-	"time"
+	"maps"
 
 	"github.com/thomaspoignant/go-feature-flag/exporter"
 	"github.com/thomaspoignant/go-feature-flag/ffcontext"
-
 	"github.com/thomaspoignant/go-feature-flag/internal/flag"
-	"github.com/thomaspoignant/go-feature-flag/internal/flagstate"
 	"github.com/thomaspoignant/go-feature-flag/model"
 )
 
@@ -232,96 +230,6 @@ func (g *GoFeatureFlag) JSONVariationDetails(flagKey string, ctx ffcontext.Conte
 	return res, err
 }
 
-// AllFlagsState return the values of all the flags for a specific user.
-// If valid field is false it means that we had an error when checking the flags.
-func AllFlagsState(ctx ffcontext.Context) flagstate.AllFlags {
-	return ff.AllFlagsState(ctx)
-}
-
-// GetFlagsFromCache returns all the flags present in the cache with their
-// current state when calling this method. If cache hasn't been initialized, an
-// error reporting this is returned.
-func GetFlagsFromCache() (map[string]flag.Flag, error) {
-	return ff.GetFlagsFromCache()
-}
-
-// AllFlagsState return a flagstate.AllFlags that contains all the flags for a specific user.
-func (g *GoFeatureFlag) AllFlagsState(ctx ffcontext.Context) flagstate.AllFlags {
-	flags := map[string]flag.Flag{}
-	if g == nil {
-		// empty AllFlags will set valid to false
-		return flagstate.AllFlags{}
-	}
-
-	if !g.config.Offline {
-		var err error
-		flags, err = g.cache.AllFlags()
-		if err != nil {
-			// empty AllFlags will set valid to false
-			return flagstate.AllFlags{}
-		}
-	}
-
-	allFlags := flagstate.NewAllFlags()
-	for key, currentFlag := range flags {
-		flagValue, resolutionDetails := currentFlag.Value(key, ctx, flag.Context{
-			Environment:     g.config.Environment,
-			DefaultSdkValue: nil,
-		})
-
-		// if the flag is disabled we are ignoring it.
-		if resolutionDetails.Reason == flag.ReasonDisabled {
-			allFlags.AddFlag(key, flagstate.FlagState{
-				Timestamp:   time.Now().Unix(),
-				TrackEvents: currentFlag.IsTrackEvents(),
-				Failed:      resolutionDetails.ErrorCode != "",
-				ErrorCode:   resolutionDetails.ErrorCode,
-				Reason:      resolutionDetails.Reason,
-				Metadata:    resolutionDetails.Metadata,
-			})
-			continue
-		}
-
-		switch v := flagValue; v.(type) {
-		case int, float64, bool, string, []interface{}, map[string]interface{}:
-			allFlags.AddFlag(key, flagstate.FlagState{
-				Value:         v,
-				Timestamp:     time.Now().Unix(),
-				VariationType: resolutionDetails.Variant,
-				TrackEvents:   currentFlag.IsTrackEvents(),
-				Failed:        resolutionDetails.ErrorCode != "",
-				ErrorCode:     resolutionDetails.ErrorCode,
-				Reason:        resolutionDetails.Reason,
-				Metadata:      resolutionDetails.Metadata,
-			})
-
-		default:
-			defaultVariationName := flag.VariationSDKDefault
-			defaultVariationValue := currentFlag.GetVariationValue(defaultVariationName)
-			allFlags.AddFlag(
-				key,
-				flagstate.FlagState{
-					Value:         defaultVariationValue,
-					Timestamp:     time.Now().Unix(),
-					VariationType: defaultVariationName,
-					TrackEvents:   currentFlag.IsTrackEvents(),
-					Failed:        true,
-					ErrorCode:     flag.ErrorCodeTypeMismatch,
-					Reason:        flag.ReasonError,
-					Metadata:      resolutionDetails.Metadata,
-				})
-		}
-	}
-	return allFlags
-}
-
-// GetFlagsFromCache returns all the flags present in the cache with their
-// current state when calling this method. If cache hasn't been initialized, an
-// error reporting this is returned.
-func (g *GoFeatureFlag) GetFlagsFromCache() (map[string]flag.Flag, error) {
-	return g.cache.AllFlags()
-}
-
 // RawVariation return the raw value of the flag (without any types).
 // This raw result is mostly used by software built on top of go-feature-flag such as
 // go-feature-flag relay proxy.
@@ -362,15 +270,16 @@ func notifyVariation[T model.JSONType](
 ) {
 	if result.TrackEvents {
 		event := exporter.NewFeatureEvent(ctx, flagKey, result.Value, result.VariationType, result.Failed, result.Version,
-			"SERVER")
+			"SERVER", ctx.ExtractGOFFProtectedFields().ExporterMetadata)
 		g.CollectEventData(event)
 	}
 }
 
 // getVariation is the internal generic func that handle the logic of a variation the result will always
 // contain a valid model.VariationResult
+// nolint:funlen
 func getVariation[T model.JSONType](
-	g *GoFeatureFlag, flagKey string, ctx ffcontext.Context, sdkDefaultValue T, expectedType string,
+	g *GoFeatureFlag, flagKey string, evaluationCtx ffcontext.Context, sdkDefaultValue T, expectedType string,
 ) (model.VariationResult[T], error) {
 	if g == nil {
 		return model.VariationResult[T]{
@@ -382,7 +291,6 @@ func getVariation[T model.JSONType](
 			Cacheable:     false,
 		}, fmt.Errorf("go-feature-flag is not initialised, default value is used")
 	}
-
 	if g.config.Offline {
 		return model.VariationResult[T]{
 			Value:         sdkDefaultValue,
@@ -411,13 +319,19 @@ func getVariation[T model.JSONType](
 		return varResult, err
 	}
 
-	flagValue, resolutionDetails := f.Value(flagKey, ctx,
-		flag.Context{Environment: g.config.Environment, DefaultSdkValue: sdkDefaultValue})
+	flagCtx := flag.Context{
+		DefaultSdkValue:             sdkDefaultValue,
+		EvaluationContextEnrichment: maps.Clone(g.config.EvaluationContextEnrichment),
+	}
+	if g.config.Environment != "" {
+		flagCtx.AddIntoEvaluationContextEnrichment("env", g.config.Environment)
+	}
+	flagValue, resolutionDetails := f.Value(flagKey, evaluationCtx, flagCtx)
 
 	var convertedValue interface{}
 	switch value := flagValue.(type) {
 	case float64:
-		// this part ensure that we convert float64 value into int if we call IntVariation on a float64 value.
+		// this part ensures that we convert float64 value into int if we call IntVariation on a float64 value.
 		if expectedType == "int" {
 			convertedValue = int(value)
 		} else {
@@ -445,16 +359,31 @@ func getVariation[T model.JSONType](
 			}, fmt.Errorf(errorWrongVariation, flagKey)
 		}
 	}
-
 	return model.VariationResult[T]{
 		Value:         v,
 		VariationType: resolutionDetails.Variant,
 		Reason:        resolutionDetails.Reason,
 		ErrorCode:     resolutionDetails.ErrorCode,
+		ErrorDetails:  resolutionDetails.ErrorMessage,
 		Failed:        resolutionDetails.ErrorCode != "",
 		TrackEvents:   f.IsTrackEvents(),
 		Version:       f.GetVersion(),
 		Cacheable:     resolutionDetails.Cacheable,
-		Metadata:      f.GetMetadata(),
+		Metadata:      constructMetadata(f, resolutionDetails),
 	}, nil
+}
+
+// constructMetadata is the internal generic func used to enhance model.VariationResult adding
+// the targeting.rule's name (from configuration) to the Metadata.
+// That way, it is possible to see when a targeting rule is match during the evaluation process.
+func constructMetadata(f flag.Flag, resolutionDetails flag.ResolutionDetails) map[string]interface{} {
+	metadata := maps.Clone(f.GetMetadata())
+	if resolutionDetails.RuleName == nil || *resolutionDetails.RuleName == "" {
+		return metadata
+	}
+	if metadata == nil {
+		metadata = make(map[string]interface{})
+	}
+	metadata["evaluatedRuleName"] = *resolutionDetails.RuleName
+	return metadata
 }

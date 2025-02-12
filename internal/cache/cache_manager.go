@@ -3,22 +3,23 @@ package cache
 import (
 	"encoding/json"
 	"errors"
-	"log"
+	"log/slog"
+	"os"
 	"strings"
 	"sync"
 	"time"
 
 	"github.com/BurntSushi/toml"
-
-	"github.com/thomaspoignant/go-feature-flag/internal/dto"
-
+	"github.com/google/go-cmp/cmp"
 	"github.com/thomaspoignant/go-feature-flag/internal/flag"
+	"github.com/thomaspoignant/go-feature-flag/model/dto"
+	"github.com/thomaspoignant/go-feature-flag/utils/fflog"
 	"gopkg.in/yaml.v3"
 )
 
 type Manager interface {
 	ConvertToFlagStruct(loadedFlags []byte, fileFormat string) (map[string]dto.DTO, error)
-	UpdateCache(newFlags map[string]dto.DTO, log *log.Logger) error
+	UpdateCache(newFlags map[string]dto.DTO, log *fflog.FFLogger, notifyChanges bool) error
 	Close()
 	GetFlag(key string) (flag.Flag, error)
 	AllFlags() (map[string]flag.Flag, error)
@@ -26,19 +27,21 @@ type Manager interface {
 }
 
 type cacheManagerImpl struct {
-	inMemoryCache       Cache
-	mutex               sync.RWMutex
-	notificationService Service
-	latestUpdate        time.Time
-	logger              *log.Logger
+	inMemoryCache                   Cache
+	mutex                           sync.RWMutex
+	notificationService             Service
+	latestUpdate                    time.Time
+	logger                          *fflog.FFLogger
+	persistentFlagConfigurationFile string
 }
 
-func New(notificationService Service, logger *log.Logger) Manager {
+func New(notificationService Service, persistentFlagConfigurationFile string, logger *fflog.FFLogger) Manager {
 	return &cacheManagerImpl{
-		logger:              logger,
-		inMemoryCache:       NewInMemoryCache(logger),
-		mutex:               sync.RWMutex{},
-		notificationService: notificationService,
+		logger:                          logger,
+		inMemoryCache:                   NewInMemoryCache(logger),
+		mutex:                           sync.RWMutex{},
+		notificationService:             notificationService,
+		persistentFlagConfigurationFile: persistentFlagConfigurationFile,
 	}
 }
 
@@ -57,7 +60,7 @@ func (c *cacheManagerImpl) ConvertToFlagStruct(loadedFlags []byte, fileFormat st
 	return newFlags, err
 }
 
-func (c *cacheManagerImpl) UpdateCache(newFlags map[string]dto.DTO, log *log.Logger) error {
+func (c *cacheManagerImpl) UpdateCache(newFlags map[string]dto.DTO, log *fflog.FFLogger, notifyChanges bool) error {
 	newCache := NewInMemoryCache(c.logger)
 	newCache.Init(newFlags)
 	newCacheFlags := newCache.All()
@@ -72,8 +75,14 @@ func (c *cacheManagerImpl) UpdateCache(newFlags map[string]dto.DTO, log *log.Log
 	c.latestUpdate = time.Now()
 	c.mutex.Unlock()
 
-	// notify the changes
-	c.notificationService.Notify(oldCacheFlags, newCacheFlags, log)
+	if notifyChanges {
+		// notify the changes
+		c.notificationService.Notify(oldCacheFlags, newCacheFlags, log)
+	}
+	// persist the cache on disk
+	if c.persistentFlagConfigurationFile != "" {
+		c.PersistCache(oldCacheFlags, newCacheFlags)
+	}
 	return nil
 }
 
@@ -109,4 +118,29 @@ func (c *cacheManagerImpl) GetLatestUpdateDate() time.Time {
 	c.mutex.RLock()
 	defer c.mutex.RUnlock()
 	return c.latestUpdate
+}
+
+// PersistCache is writing the flags to a file to be able to restart without being able to access the retrievers.
+// It is useful to have a fallback in case of a problem with the retrievers, such as a network issue.
+//
+// The persistence is done in a goroutine to not block the main thread.
+func (c *cacheManagerImpl) PersistCache(oldCache map[string]flag.Flag, newCache map[string]flag.Flag) {
+	go func() {
+		if _, err := os.Stat(c.persistentFlagConfigurationFile); !os.IsNotExist(err) && cmp.Equal(oldCache, newCache) {
+			c.logger.Debug("No change in the cache, skipping the persist")
+			return
+		}
+		data, err := yaml.Marshal(newCache)
+		if err != nil {
+			c.logger.Error("Error while marshalling flags to persist", slog.Any("error", err))
+			return
+		}
+
+		err = os.WriteFile(c.persistentFlagConfigurationFile, data, 0600)
+		if err != nil {
+			c.logger.Error("Error while writing flags to file", slog.Any("error", err))
+			return
+		}
+		c.logger.Info("Flags cache persisted to file", slog.String("file", c.persistentFlagConfigurationFile))
+	}()
 }

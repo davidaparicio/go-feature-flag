@@ -1,8 +1,20 @@
 {
     "$schema": "https://json-schema.org/draft/2020-12/schema",
     "$defs": {
-        "DTOv1": {
+        "DTO": {
             "properties": {
+                "trackEvents": {
+                    "type": "boolean"
+                },
+                "disable": {
+                    "type": "boolean"
+                },
+                "version": {
+                    "type": "string"
+                },
+                "converter": {
+                    "type": "string"
+                },
                 "variations": {
                     "additionalProperties": true,
                     "type": "object",
@@ -16,6 +28,9 @@
                     "type": "array",
                     "title": "targeting",
                     "description": "List of rule to target a subset of the users based on the evaluation context."
+                },
+                "bucketingKey": {
+                    "type": "string"
                 },
                 "defaultRule": {
                     "$ref": "#/$defs/Rule",
@@ -178,6 +193,9 @@
                     },
                     "type": "array"
                 },
+                "bucketingKey": {
+                    "type": "string"
+                },
                 "defaultRule": {
                     "$ref": "#/$defs/Rule"
                 },
@@ -212,7 +230,7 @@
         }
     },
     "additionalProperties": {
-        "$ref": "#/$defs/DTOv1"
+        "$ref": "#/$defs/DTO"
     },
     "type": "object"
 }

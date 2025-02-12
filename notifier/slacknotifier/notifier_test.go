@@ -10,7 +10,6 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/thomaspoignant/go-feature-flag/internal/flag"
 	"github.com/thomaspoignant/go-feature-flag/notifier"
-
 	"github.com/thomaspoignant/go-feature-flag/testutils"
 	"github.com/thomaspoignant/go-feature-flag/testutils/testconvert"
 )
@@ -46,7 +45,7 @@ func TestSlackNotifier_Notify(t *testing.T) {
 						"test-flag3": &flag.InternalFlag{
 							Rules: &[]flag.Rule{
 								{
-									Name:  testconvert.String("legacyRuleV0"),
+									Name:  testconvert.String("rule1"),
 									Query: testconvert.String("key eq \"random-key\""),
 									Percentages: &map[string]float64{
 										"False": 95,
@@ -60,7 +59,7 @@ func TestSlackNotifier_Notify(t *testing.T) {
 								"True":    testconvert.Interface("test"),
 							},
 							DefaultRule: &flag.Rule{
-								Name:            testconvert.String("legacyDefaultRule"),
+								Name:            testconvert.String("defaultRule"),
 								VariationResult: testconvert.String("Default"),
 							},
 							TrackEvents: testconvert.Bool(true),
@@ -72,7 +71,7 @@ func TestSlackNotifier_Notify(t *testing.T) {
 						"test-flag": &flag.InternalFlag{
 							Rules: &[]flag.Rule{
 								{
-									Name:  testconvert.String("legacyRuleV0"),
+									Name:  testconvert.String("rule1"),
 									Query: testconvert.String("key eq \"random-key\""),
 									Percentages: &map[string]float64{
 										"False": 0,
@@ -86,7 +85,7 @@ func TestSlackNotifier_Notify(t *testing.T) {
 								"True":    testconvert.Interface(true),
 							},
 							DefaultRule: &flag.Rule{
-								Name:            testconvert.String("legacyDefaultRule"),
+								Name:            testconvert.String("defaultRule"),
 								VariationResult: testconvert.String("Default"),
 							},
 						},
@@ -100,7 +99,7 @@ func TestSlackNotifier_Notify(t *testing.T) {
 									"True":    testconvert.Interface(true),
 								},
 								DefaultRule: &flag.Rule{
-									Name: testconvert.String("legacyDefaultRule"),
+									Name: testconvert.String("defaultRule"),
 									Percentages: &map[string]float64{
 										"False": 0,
 										"True":  100,
@@ -119,7 +118,7 @@ func TestSlackNotifier_Notify(t *testing.T) {
 								},
 								Rules: &[]flag.Rule{
 									{
-										Name:  testconvert.String("legacyRuleV0"),
+										Name:  testconvert.String("rule1"),
 										Query: testconvert.String("key eq \"not-a-ke\""),
 										Percentages: &map[string]float64{
 											"False": 20,
@@ -128,7 +127,7 @@ func TestSlackNotifier_Notify(t *testing.T) {
 									},
 								},
 								DefaultRule: &flag.Rule{
-									Name:            testconvert.String("legacyDefaultRule"),
+									Name:            testconvert.String("defaultRule"),
 									VariationResult: testconvert.String("Default"),
 								},
 								Disable:     testconvert.Bool(true),

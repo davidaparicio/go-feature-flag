@@ -38,14 +38,6 @@ func TestRetrieverConf_IsValid(t *testing.T) {
 			errValue: "invalid retriever: no \"repositorySlug\" property found for kind \"github\"",
 		},
 		{
-			name: "kind GitlabRetriever without URL slug",
-			fields: config.RetrieverConf{
-				Kind: "gitlab",
-			},
-			wantErr:  true,
-			errValue: "invalid retriever: no \"URL\" property found for kind \"gitlab\"",
-		},
-		{
 			name: "kind GitlabRetriever, with URL but without path",
 			fields: config.RetrieverConf{
 				Kind: "gitlab",
@@ -63,6 +55,13 @@ func TestRetrieverConf_IsValid(t *testing.T) {
 			},
 			wantErr:  true,
 			errValue: "invalid retriever: no \"path\" property found for kind \"gitlab\"",
+		}, {
+			name: "kind BitbucketRetriever without repo slug",
+			fields: config.RetrieverConf{
+				Kind: "bitbucket",
+			},
+			wantErr:  true,
+			errValue: "invalid retriever: no \"repositorySlug\" property found for kind \"bitbucket\"",
 		},
 		{
 			name: "kind S3Retriever without item",
@@ -122,6 +121,39 @@ func TestRetrieverConf_IsValid(t *testing.T) {
 			},
 			wantErr:  true,
 			errValue: "invalid retriever: no \"bucket\" property found for kind \"googleStorage\"",
+		},
+		{
+			name: "kind azureBlobStorage without object",
+			fields: config.RetrieverConf{
+				Kind:        "azureBlobStorage",
+				Container:   "testcontainer",
+				AccountName: "devstoreaccount1",
+				AccountKey:  "Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq",
+			},
+			wantErr:  true,
+			errValue: "invalid retriever: no \"object\" property found for kind \"azureBlobStorage\"",
+		},
+		{
+			name: "kind azureBlobStorage without accountName",
+			fields: config.RetrieverConf{
+				Kind:       "azureBlobStorage",
+				Container:  "testcontainer",
+				Object:     "flag-config.yaml",
+				AccountKey: "Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq",
+			},
+			wantErr:  true,
+			errValue: "invalid retriever: no \"accountName\" property found for kind \"azureBlobStorage\"",
+		},
+		{
+			name: "kind azureBlobStorage without container",
+			fields: config.RetrieverConf{
+				Kind:        "azureBlobStorage",
+				Object:      "flag-config.yaml",
+				AccountName: "devstoreaccount1",
+				AccountKey:  "Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq",
+			},
+			wantErr:  true,
+			errValue: "invalid retriever: no \"container\" property found for kind \"azureBlobStorage\"",
 		},
 		{
 			name: "valid s3",
@@ -192,7 +224,7 @@ func TestRetrieverConf_IsValid(t *testing.T) {
 			errValue: "invalid retriever: no \"key\" property found for kind \"configmap\"",
 		},
 		{
-			name: "kind k8s configmap without key",
+			name: "kind k8s configmap without ConfigMap",
 			fields: config.RetrieverConf{
 				Kind:      "configmap",
 				Namespace: "xxx",
@@ -200,6 +232,66 @@ func TestRetrieverConf_IsValid(t *testing.T) {
 			},
 			wantErr:  true,
 			errValue: "invalid retriever: no \"configmap\" property found for kind \"configmap\"",
+		},
+		{
+			name: "kind k8s valid",
+			fields: config.RetrieverConf{
+				Kind:      "configmap",
+				Namespace: "xxx",
+				Key:       "xxx",
+				ConfigMap: "xxx",
+			},
+		},
+		{
+			name: "kind mongoDB without URI",
+			fields: config.RetrieverConf{
+				Kind:       "mongodb",
+				URI:        "",
+				Collection: "xxx",
+				Database:   "xxx",
+			},
+			wantErr:  true,
+			errValue: "invalid retriever: no \"uri\" property found for kind \"mongodb\"",
+		},
+		{
+			name: "kind redis without options",
+			fields: config.RetrieverConf{
+				Kind:        "redis",
+				RedisPrefix: "xxx",
+			},
+			wantErr:  true,
+			errValue: "invalid retriever: no \"redisOptions\" property found for kind \"redis\"",
+		},
+		{
+			name: "kind mongoDB without Collection",
+			fields: config.RetrieverConf{
+				Kind:       "mongodb",
+				URI:        "xxx",
+				Collection: "",
+				Database:   "xxx",
+			},
+			wantErr:  true,
+			errValue: "invalid retriever: no \"collection\" property found for kind \"mongodb\"",
+		},
+		{
+			name: "kind mongoDB without database",
+			fields: config.RetrieverConf{
+				Kind:       "mongodb",
+				URI:        "xxx",
+				Collection: "xxx",
+				Database:   "",
+			},
+			wantErr:  true,
+			errValue: "invalid retriever: no \"database\" property found for kind \"mongodb\"",
+		},
+		{
+			name: "kind mongoDB valid",
+			fields: config.RetrieverConf{
+				Kind:       "mongodb",
+				URI:        "xxx",
+				Collection: "xxx",
+				Database:   "xxx",
+			},
 		},
 	}
 	for _, tt := range tests {

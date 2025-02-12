@@ -4,15 +4,16 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log/slog"
+	"strings"
+	"testing"
+
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/sqs"
 	"github.com/aws/aws-sdk-go-v2/service/sqs/types"
 	"github.com/stretchr/testify/assert"
 	"github.com/thomaspoignant/go-feature-flag/exporter"
-	"log"
-	"os"
-	"strings"
-	"testing"
+	"github.com/thomaspoignant/go-feature-flag/utils/fflog"
 )
 
 type SQSSendMessageAPIMock struct {
@@ -31,7 +32,7 @@ func (s *SQSSendMessageAPIMock) SendMessage(ctx context.Context,
 
 func TestSQS_IsBulk(t *testing.T) {
 	exporter := Exporter{}
-	assert.False(t, exporter.IsBulk(), "Exporter exporter is not a bulk exporter")
+	assert.False(t, exporter.IsBulk(), "DeprecatedExporter is not a bulk exporter")
 }
 
 func TestExporter_Export(t *testing.T) {
@@ -105,7 +106,7 @@ func TestExporter_Export(t *testing.T) {
 				sqsService: &tt.fields.sqsService,
 			}
 
-			logger := log.New(os.Stdout, "", 0)
+			logger := &fflog.FFLogger{LeveledLogger: slog.Default()}
 			err := f.Export(context.TODO(), logger, tt.featureEvents)
 			if tt.wantErr {
 				assert.Error(t, err)
@@ -121,7 +122,7 @@ func TestExporter_Export(t *testing.T) {
 					QueueUrl:     aws.String(tt.fields.QueueURL),
 					DelaySeconds: 0,
 					MessageAttributes: map[string]types.MessageAttributeValue{
-						"emitter": types.MessageAttributeValue{
+						"emitter": {
 							DataType:    aws.String("String"),
 							StringValue: aws.String("GO Feature Flag"),
 						},

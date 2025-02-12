@@ -6,12 +6,12 @@
 <p align="center">
     <a href="https://github.com/thomaspoignant/go-feature-flag/actions/workflows/ci.yml"><img src="https://github.com/thomaspoignant/go-feature-flag/actions/workflows/ci.yml/badge.svg" alt="Build Status" /></a>
     <a href="https://coveralls.io/github/thomaspoignant/go-feature-flag"><img src="https://coveralls.io/repos/github/thomaspoignant/go-feature-flag/badge.svg" alt="Coverage Status" /></a>
-    <a href="https://sonarcloud.io/dashboard?id=thomaspoignant_go-feature-flag-relay-proxy"><img src="https://sonarcloud.io/api/project_badges/measure?project=thomaspoignant_go-feature-flag-relay-proxy&metric=alert_status" alt="Sonarcloud Status" /></a>
-    <a href="https://github.com/thomaspoignant/go-feature-flag-relay-proxy/releases"><img src="https://img.shields.io/github/v/release/thomaspoignant/go-feature-flag-relay-proxy" alt="Release version" /></a>
-    <a href="https://pkg.go.dev/github.com/thomaspoignant/go-feature-flag-relay-proxy"><img src="https://godoc.org/github.com/thomaspoignant/go-feature-flag-relay-proxy?status.svg" alt="GoDoc" /></a>
-    <img src="https://img.shields.io/github/go-mod/go-version/thomaspoignant/go-feature-flag-relay-proxy?logo=go%20version" alt="Go version"/>
-    <a href="https://github.com/thomaspoignant/go-feature-flag/blob/main/LICENSE"><img src="https://img.shields.io/github/license/thomaspoignant/go-feature-flag-relay-proxy" alt="License"/></a>
-    <a href="https://gophers.slack.com/messages/go-feature-flag"><img src="https://img.shields.io/badge/join-us%20on%20slack-gray.svg?longCache=true&logo=slack&colorB=green" alt="Join us on slack"></a> 
+    <a href="https://sonarcloud.io/dashboard?id=thomaspoignant_go-feature-flag"><img src="https://sonarcloud.io/api/project_badges/measure?project=thomaspoignant_go-feature-flag&metric=alert_status" alt="Sonarcloud Status" /></a>
+    <a href="https://github.com/thomaspoignant/go-feature-flag/releases"><img src="https://img.shields.io/github/v/release/thomaspoignant/go-feature-flag" alt="Release version" /></a>
+    <a href="https://pkg.go.dev/github.com/thomaspoignant/go-feature-flag"><img src="https://godoc.org/github.com/thomaspoignant/go-feature-flag?status.svg" alt="GoDoc" /></a>
+    <img src="https://img.shields.io/github/go-mod/go-version/thomaspoignant/go-feature-flag?logo=go%20version" alt="Go version"/>
+    <a href="https://github.com/thomaspoignant/go-feature-flag/blob/main/LICENSE"><img src="https://img.shields.io/github/license/thomaspoignant/go-feature-flag" alt="License"/></a>
+    <a href="https://gofeatureflag.org/slack"><img src="https://img.shields.io/badge/join-us%20on%20slack-gray.svg?longCache=true&logo=slack&colorB=green" alt="Join us on slack"></a> 
 </p>
 
 ## What does the GO Feature Flag Relay Proxy do?
@@ -47,7 +47,7 @@ Before starting your **relay proxy** you will need to create a minimal configura
 # this is a minimal config containing only where your flag file is located 
 retriever:
   kind: http
-  url: https://raw.githubusercontent.com/thomaspoignant/go-feature-flag/main/examples/retriever_file/flags.yaml
+  url: https://raw.githubusercontent.com/thomaspoignant/go-feature-flag/main/cmd/relayproxy/testdata/dockerhub-example/flags.goff.yaml
 ```
 
 After that you can launch the **relay proxy** by using this command:
