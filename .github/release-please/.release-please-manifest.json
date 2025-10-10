@@ -1,5 +1,5 @@
 {
-    ".": "1.46.1",
+    ".": "1.46.2",
     "module/evaluation": "0.0.0",
     "module/core": "0.0.0",
     "openfeature/providers/python-provider": "0.4.4",
